@@ -21,8 +21,13 @@ def getSegmentThatEndsWith(inputObject, endsWithString): # terrible bodge while 
   for attr, value in inputObject.items():
     if attr.endswith(endsWithString):
       return value  
-
+    
+def getSegmentFromID(inputObject, inputID): # fetch segment offsets and name from n3dhdr IDs
+  for attr, value in inputObject.items():
+    if value["ID"] == inputID:
+      return value  
 # N3Dhdr Start
+
 def getN3DSegments(basePath):
   outputData = {}
   with open(basePath+'.n3dhdr', 'rb') as hdrFilePointer:
@@ -55,13 +60,13 @@ def getN3DSegments(basePath):
       else:
         segmentName = readString(segmentData) # if there's no skeleton data it starts with segment name
 
-      outputData[segmentName] = {'offset': segmentOffset, 'length': segmentLength}
+      outputData[segmentName] = {'offset': segmentOffset, 'length': segmentLength, 'ID': segmentID}
       #noesis.logOutput("Segment: '" + segmentName + "' ID: '" + str(segmentID)+"'\n") # prints segment names and their IDs
 
     hdrFilePointer.close()
     dtaFilePointer.close()
   return outputData
-# End of Willow's unreadable garbage
+# End of Annie's not so unreadable code
 
 def registerNoesisTypes():
   handle = noesis.register("Cave Story 3D Data",".n3ddta")
@@ -77,7 +82,8 @@ def Align(bs, n):
   value = bs.tell() % n
   if (value):
     bs.seek(n - value, 1)
-
+    
+    
 def LoadModel(data, mdlList):
   ctx = rapi.rpgCreateContext()
   rapi.setPreviewOption("drawAllModels","1") # sets Draw all models to 1 by default, both values must be strings
@@ -130,13 +136,17 @@ def LoadModel(data, mdlList):
         matStride = matCounter * 0x24
         bs.seek(meshSectionOffset + matOffs + matStride)
         _,_,_,_,_,_,matFaceCount,matFaceOffset,matID = bs.readFloat(),bs.readFloat(),bs.readFloat(),bs.readFloat(),bs.readFloat(),bs.readFloat(),bs.readUInt(),bs.readUInt(),bs.readUInt()
-        rapi.rpgSetMaterial(str(matID))# if a read material is the same name, only one material is created 
+        rapi.rpgSetMaterial(str(matID))# if materials share a name they are merged
+        materialSegmentOffset = getSegmentFromID(n3dSegments,matID)['offset'];
+        materialSegmentName = getSegmentFromID(n3dSegments,matID);
+        bs.seek(materialSegmentOffset)
+        noesis.logOutput("Material of ID #"+ str(matID)+" and offset " + str(materialSegmentOffset)+"\n")
 
         #indices
         bs.seek(meshSectionOffset + idxOffs+matFaceOffset*2)
         idxBuffer = bs.readBytes(matFaceCount*2)
         rapi.rpgCommitTriangles(idxBuffer,noesis.RPGEODATA_USHORT, matFaceCount,noesis.RPGEO_TRIANGLE)
-        noesis.logOutput("Material #"+str(matCounter+1) +" "+ str(matID)+"\n")
+
       
       if n3dSegments['hasSkeleton']:
         #jump to skel section, grab names and parenting info
