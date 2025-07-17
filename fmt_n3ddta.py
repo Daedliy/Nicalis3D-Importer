@@ -24,7 +24,10 @@ def getSegmentThatEndsWith(inputObject, endsWithString): # terrible bodge while 
     
 def getSegmentFromID(inputObject, inputID): # fetch segment offsets and name from n3dhdr IDs
   for attr, value in inputObject.items():
-    if value["ID"] == inputID:
+    noesis.logOutput(str(attr+"\n"))
+    if attr == 'hasSkeleton':# todo, re-write this to only depend on IDs or get hasSkeleton out of dict
+      continue 
+    elif value["ID"] == inputID:
       return value  
 # N3Dhdr Start
 
@@ -138,9 +141,7 @@ def LoadModel(data, mdlList):
         _,_,_,_,_,_,matFaceCount,matFaceOffset,matID = bs.readFloat(),bs.readFloat(),bs.readFloat(),bs.readFloat(),bs.readFloat(),bs.readFloat(),bs.readUInt(),bs.readUInt(),bs.readUInt()
         rapi.rpgSetMaterial(str(matID))# if materials share a name they are merged
         materialSegmentOffset = getSegmentFromID(n3dSegments,matID)['offset'];
-        materialSegmentName = getSegmentFromID(n3dSegments,matID);
         bs.seek(materialSegmentOffset)
-        noesis.logOutput("Material of ID #"+ str(matID)+" and offset " + str(materialSegmentOffset)+"\n")
 
         #indices
         bs.seek(meshSectionOffset + idxOffs+matFaceOffset*2)
