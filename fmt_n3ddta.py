@@ -1,11 +1,7 @@
 from inc_noesis import *
 noesis.logPopup()
 noesis.openDataViewer()
-# Modified on 7/12/25 (6:45 PM)
-# This is here so it's easier to recognize later versions
-# without having to deal with version numbers
 
-# Annie's not so unreadable code
 def readUInt32(fp):
   return int.from_bytes(fp.read(4), byteorder='little', signed=False)
 
@@ -24,11 +20,12 @@ def getSegmentThatEndsWith(inputObject, endsWithString): # terrible bodge while 
     
 def getSegmentFromID(inputObject, inputID): # fetch segment offsets and name from n3dhdr IDs
   for attr, value in inputObject.items():
-    noesis.logOutput(str(attr+"\n"))
+    noesis.logOutput(str(attr)+"\n")
     if attr == 'hasSkeleton':# todo, re-write this to only depend on IDs or get hasSkeleton out of dict
       continue 
     elif value["ID"] == inputID:
       return value  
+    
 # N3Dhdr Start
 
 def getN3DSegments(basePath):
@@ -69,12 +66,11 @@ def getN3DSegments(basePath):
     hdrFilePointer.close()
     dtaFilePointer.close()
   return outputData
-# End of Annie's not so unreadable code
 
 def registerNoesisTypes():
   handle = noesis.register("Cave Story 3D Data",".n3ddta")
   noesis.setHandlerTypeCheck(handle, CheckType)
-  noesis.setHandlerLoadModel(handle, LoadModel)  
+  noesis.setHandlerLoadModel(handle, LoadModel)
   return 1
   
 def CheckType(data):
@@ -96,6 +92,8 @@ def LoadModel(data, mdlList):
   currentFilePath = noesis.getSelectedFile()
   baseFilePath = currentFilePath[:-7]
   n3dSegments = getN3DSegments(baseFilePath)
+  texList = []
+  matList = []
 
   for name, value in n3dSegments.items():# even worse bodge, repeats for every section with -mesh in name and then the offset is used
     if name.endswith("-mesh"):
@@ -133,16 +131,39 @@ def LoadModel(data, mdlList):
         wBuffer = b'x\FF' * vCount #create dummy wBuffer of weight 1 
         rapi.rpgBindBoneWeightBuffer(wBuffer, noesis.RPGEODATA_UBYTE, 0x1, 0x1) # boneweights bytes, data type, stride, weights per vert
       
-      
-      #material headers?
+      #submesh headers?
       for matCounter in range(matCount):
         matStride = matCounter * 0x24
         bs.seek(meshSectionOffset + matOffs + matStride)
         _,_,_,_,_,_,matFaceCount,matFaceOffset,matID = bs.readFloat(),bs.readFloat(),bs.readFloat(),bs.readFloat(),bs.readFloat(),bs.readFloat(),bs.readUInt(),bs.readUInt(),bs.readUInt()
-        rapi.rpgSetMaterial(str(matID))# if materials share a name they are merged
+        
+        #materials
         materialSegmentOffset = getSegmentFromID(n3dSegments,matID)['offset'];
         bs.seek(materialSegmentOffset)
+        matName = bs.readString()
+        rapi.rpgSetMaterial(matName)# if materials share a name they are merged
+        bs.seek(materialSegmentOffset+256)
+        texID,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_, = bs.readUInt(),bs.readUInt(),bs.readUInt(),bs.readUInt(),bs.readFloat(),bs.readFloat(),bs.readFloat(),bs.readFloat(),bs.readFloat(),bs.readFloat(),bs.readFloat(),bs.readFloat(),bs.readFloat(),bs.readFloat(),bs.readFloat(),bs.readUInt()
 
+        #textures
+        textureSegmentOffset = getSegmentFromID(n3dSegments,texID)['offset'];
+        bs.seek(textureSegmentOffset)
+        texName = bs.readString()
+        bs.seek(textureSegmentOffset+36)
+        texWidth,texHeight,texFormat,_,texBufferOffs = bs.readUInt(),bs.readUInt(),bs.readUInt(),bs.readUInt(),bs.readUInt()
+        if texFormat == 4:
+          textureData = rapi.imageDecodeRaw(bs.readBytes(texWidth*texHeight*2),texWidth,texHeight,'b5g6r5')
+        elif texFormat == 2:
+          textureData = rapi.imageDecodeRaw(bs.readBytes(texWidth*texHeight*2),texWidth,texHeight,'a4b4g4r4')
+        format = noesis.NOESISTEX_RGBA32
+        
+        tex = NoeTexture(str(texName), texWidth, texHeight, textureData, format)
+        texList.append(tex)
+        mat = NoeMaterial(str(matName),str(texName))
+        matList.append(mat)
+        
+        noesis.logOutput(str(texList)+"\n"+str(matList)+"\n")
+        
         #indices
         bs.seek(meshSectionOffset + idxOffs+matFaceOffset*2)
         idxBuffer = bs.readBytes(matFaceCount*2)
@@ -192,9 +213,12 @@ def LoadModel(data, mdlList):
   rapi.setPreviewOption("setAngOfs", "0 -90 0")
   if n3dSegments['hasSkeleton']:
     mdl.setBones(jointList)
+  mdl.setModelMaterials(NoeModelMaterials(texList, matList))
   mdlList.append(mdl)
   
   return 1
 
   
-# thank you @s0me0neelse. for your help with writing the very first version of this script with my AXE template 
+# My thanks to:
+# @s0me0neelse (Joschka, XeNTaX staff) for writing the very first version and answering all my noesis related questions
+# @annie.bot (annie) wrote the very first iterations and dug up clues essential to completing this script many years ago

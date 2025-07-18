@@ -1,4 +1,4 @@
-#include <std/mem.pat>
+//level-descriptor
 
 struct lvldesc_info{
 float unknown_float1,unknown_float2,unknown_float3,unknown_float4;
