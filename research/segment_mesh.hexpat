@@ -34,11 +34,11 @@ struct N3D_BnWghts{
 struct N3D_Indc{
     u16 index[3];
 };
-struct N3D_MtrlHdr{
-    float unknown1,unknown2,unknown3;//set these as floats cause they dont make sense otherwise
-    float unknown4,unknown5,unknown6;
-    u32 material_face_count;
-    u32 material_face_offset;
+struct N3D_SbMsh{
+    float bboxminWidth,bboxminLength,bboxminHeight;
+    float bboxmaxWidth,bboxmaxLength,bboxmaxHeight;
+    u32 submesh_face_count;
+    u32 submesh_face_offset;
     u32 material_ID;
 };
 struct N3D_PrpDta{
@@ -59,7 +59,7 @@ struct N3D_ActrDta{
 };
 struct N3D_Msh{
     N3D_MshHdr Header;
-    N3D_MtrlHdr Material_Header [Header.material_count] @ Header.material_offset;
+    N3D_SbMsh Submeshes [Header.material_count] @ Header.material_offset;
     if(Header.actor_header_offset != 0){
         N3D_ActrHdr Actor_Header @ Header.actor_header_offset;
         N3D_BnWghts Weights [Actor_Header.weight_count] @ Header.actor_header_offset+Actor_Header.weight_offset;
