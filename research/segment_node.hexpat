@@ -8,23 +8,17 @@ struct smlNodeSegment{
     char segmentName [256];
     u32 selfID;
     padding[8];
-    float scaleX;
+    float scaleX;//scales change position if xyz are 0 or not
     padding[20];
     float scaleY;
     padding[8];
     float scaleZ;
     padding[8];
    
-    float x;
-    float y;
-    float z;
+    float x,y,z;
     float unknown2;
-    float bboxWidth;
-    float bboxLength;
-    float bboxHeight;
-    float bboxWidth2;
-    float bboxLength2;
-    float bboxHeight2;
+    float bboxminWidth,bboxminLength,bboxminHeight;
+    float bboxmaxWidth2,bboxmaxLength2,bboxmaxHeight2;
     float unknown_floats2[2];
     u32 meshCount;
     u32 meshID_Offset;

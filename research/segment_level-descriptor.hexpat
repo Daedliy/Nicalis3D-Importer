@@ -1,36 +1,27 @@
 //level-descriptor
-
-struct lvldesc_info{
-float unknown_float1,unknown_float2,unknown_float3,unknown_float4;
-float unknown_float5,unknown_float6;
-padding[16];
-//this block counts how many of a type of segment is present with u32 ints
-u32 idCount1,idCount2,idCount3,idCount4,idCount5,idCount6;
-u32 idCount7,idCount8,idCount9,idCount10,idCount11;
-//in-segment offsets likely, 
-u32 idblockoffset1,idblockoffset2,idblockoffset3,idblockoffset4,idblockoffset5,idblockoffset6;
-u32 idblockoffset7,idblockoffset8,idblockoffset9,idblockoffset10,idblockoffset11;
-
-};
-
 struct lvldesc_header{
-char segmentName[256];
-lvldesc_info data;
-//often has IDs matching with those in the n3dhdr file, some are unknown
-//make this into a function before pushing to git
-u32 ID1 [data.idCount1] @ data.idblockoffset1;//smallnodes + unknowns
-u32 ID2 [data.idCount2] @ data.idblockoffset2;
-u32 ID3 [data.idCount3] @ data.idblockoffset3;
-u32 ID4 [data.idCount4] @ data.idblockoffset4;
-u32 ID5 [data.idCount5] @ data.idblockoffset5;//bignode segment IDs
-u32 textureSegmentIDs [data.idCount6] @ data.idblockoffset6;
-u32 materialSegmentIDs [data.idCount7] @ data.idblockoffset7;
-u32 ID8 [data.idCount8] @ data.idblockoffset8;//mesh segment IDs + unknowns
-u32 ID9 [data.idCount9] @ data.idblockoffset9;
-u32 skinSegmentIDs [data.idCount10] @ data.idblockoffset10;
-u32 skeletonSegmentIDs [data.idCount11] @ data.idblockoffset11;
-//any extra data is likely to just be garbage information given that this may
-//be another uninitiated array?
+    char segmentName     [256];
+    // x+ ->right, y+ -> down, z+ -> forward
+    float offsetx, offsety, offsetz;
+    float offsetx2, offsety2,offsetz2;
+    float shadingwarmth;// -1 for coolest, 1 for warmest
+    float shadinginfluence;//-1 for heaviest shading, 1 for fullbright
+    float unknown[2]; //did not encounter any changes when modified
+    u32 idcount          [11];
+    u32 idoffset         [11];
+    //segments, only 11 types exist
+    u32 NodeSegmentIDs     [idcount[0]] @ idoffset[0];//props, may have unknown ids
+    u32 ID2                [idcount[1]] @ idoffset[1];//not encountered yet
+    u32 LightSegmentIDs    [idcount[2]] @ idoffset[2];//exclusive to maps?
+    u32 ID4                [idcount[3]] @ idoffset[3];//not encountered yet
+    u32 BigNodeSegmentIDs  [idcount[4]] @ idoffset[4];//prop animation nodes?
+    u32 TextureSegmentIDs  [idcount[5]] @ idoffset[5];
+    u32 MaterialSegmentIDs [idcount[6]] @ idoffset[6];
+    u32 MeshSegmentIDs     [idcount[7]] @ idoffset[7];//may have unknown ids
+    u32 ID9                [idcount[8]] @ idoffset[8];//not encountered yet
+    u32 SkinSegmentIDs     [idcount[9]] @ idoffset[9];//actors, skin info for skeleton
+    u32 SkeletonSegmentIDs [idcount[10]] @ idoffset[10];//actors, bone info for skeleton 
+    
+    //last bytes left over may just be garbage?
 }[[name(segmentName)]];
-
 lvldesc_header LevelDescriptor @0x00;

@@ -19,10 +19,10 @@ struct N3D_MshHdr{
     char name[256];
     char unknown_related_to_node [28];
     N3D_MdlTyp model_type;//Prop or Actor
-    u32 material_count;//how many materials do we have
+    u32 submesh_count;
     u32 vertx_count;
     u32 index_count;
-    u32 material_offset;
+    u32 submesh_offset;
     u32 index_offset;
     u32 vertx_offset;
     padding[16];
@@ -59,7 +59,7 @@ struct N3D_ActrDta{
 };
 struct N3D_Msh{
     N3D_MshHdr Header;
-    N3D_SbMsh Submeshes [Header.material_count] @ Header.material_offset;
+    N3D_SbMsh Submeshes [Header.submesh_count] @ Header.submesh_offset;
     if(Header.actor_header_offset != 0){
         N3D_ActrHdr Actor_Header @ Header.actor_header_offset;
         N3D_BnWghts Weights [Actor_Header.weight_count] @ Header.actor_header_offset+Actor_Header.weight_offset;
