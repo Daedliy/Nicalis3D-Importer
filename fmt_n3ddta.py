@@ -217,8 +217,3 @@ def LoadModel(data, mdlList):
   mdlList.append(mdl)
   
   return 1
-
-  
-# My thanks to:
-# @s0me0neelse (Joschka, XeNTaX staff) for writing the very first version and answering all my noesis related questions
-# @annie.bot (annie) wrote the very first iterations and dug up clues essential to completing this script many years ago
