@@ -1,10 +1,10 @@
-struct materialData{
-char segmentName [256];
-u32 textureID;
-u32 unknownInt1,unknownInt2,unknownInt3;
-float unknownFloat1,unknownFloat2,unknownFloat3,unknownFloat4,unknownFloat5;
-float unknownFloat6,unknownFloat7,unknownFloat8,unknownFloat9,unknownFloat10;
-float unknownFloat11;
-u32 unknownInt4;
-};
-materialData Material @ 0x00;
+//Material Segment
+
+struct materialinfo{
+    char segmentname [256];
+    u32 textureid;
+    u32 unknown1[3];
+    float unknown2[11];
+    u32 unknown3;
+}[[name(segmentname)]];
+materialinfo MaterialSegment @ 0x00;

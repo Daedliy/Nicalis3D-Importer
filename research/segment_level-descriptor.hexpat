@@ -1,4 +1,5 @@
 //Level-Descriptor Segment
+//segment id is consistantly 2186838753
 struct leveldescriptorinfo{
     char segmentname [256];
     float unknown1 [10];

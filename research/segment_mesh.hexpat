@@ -34,8 +34,8 @@ struct actorinfo{
 };
 
 struct submeshinfo{
-    float bboxminwidth,bboxminlength,bboxminheight;
-    float bboxmaxwidth,bboxmaxlength,bboxmaxheight;
+    float meshbboxminwidth,meshbboxminlength,meshbboxminheight;
+    float meshbboxmaxwidth,meshbboxmaxlength,meshbboxmaxheight;
     u32 submeshfacecount;
     u32 submeshfaceoff;
     u32 materialid;

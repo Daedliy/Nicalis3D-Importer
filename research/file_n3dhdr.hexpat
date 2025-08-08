@@ -16,11 +16,11 @@ struct headerinfo{
 char modelname[while($[$]!=0)];
 padding[1]; //0 terminated string
 u32 segmentcount @ 0x100;
-segmentinfo read_chunks [segmentcount] @ 0x104;
+segmentinfo readsegments [segmentcount] @ 0x104;
 };
 
 headerinfo Header @ 0x0;
-//Start ImHex Segment loading
+//Start ImHex section loading
 //file name
 str datafile =
 Header.modelname + ".n3ddta";
@@ -34,19 +34,19 @@ std::file::Handle n3ddta = std::file::open(fulldatafilepath,std::file::Mode::Rea
 u32 datafileSize = std::file::size(n3ddta); //data file size
 std::print(datafile + " Loaded.");
 
-fn copystr2char (u8 chunk, auto contents, auto section){//copy chunk contents into section
-    for (u32 b=0,b<Header.read_chunks[chunk].size,b+=1){
+fn copystr2char (u8 byte, auto contents, auto section){//copy segments into section
+    for (u32 b=0,b<Header.readsegments[byte].size,b+=1){
         section[b] = std::string::at(contents,b);
     }
     return section;//returns str as char
 };
 
-for (u8 a=0,a<Header.segmentcount,a+=1){//repeats per chunk according to header
+for (u8 a=0,a<Header.segmentcount,a+=1){//repeats until Header segment count is met
 
-    std::file::seek(n3ddta,Header.read_chunks[a].off);//set offset from header
-    str chunkContent = std::file::read(n3ddta,Header.read_chunks[a].size);//read size from header
+    std::file::seek(n3ddta,Header.readsegments[a].off);//set segment offset from header
+    str segmentdata = std::file::read(n3ddta,Header.readsegments[a].size);//read section size from header
     
-    std::mem::Section chunkSection = std::mem::create_section(chunkContent);//sections instead
-    char sectiondata[Header.read_chunks[a].size] @ 0x00 in chunkSection; //sets size of section
-    sectiondata = copystr2char(a,chunkContent, sectiondata);//places data into section
+    std::mem::Section segmentsection = std::mem::create_section(segmentdata);
+    char sectiondata[Header.readsegments[a].size] @ 0x00 in segmentsection; //sets size of section
+    sectiondata = copystr2char(a,segmentdata, sectiondata);//places segment into section
 };
