@@ -1,13 +1,14 @@
-//Animation Node
+//Animation Node Segment
 
 enum transform_magic : u32{
     Move = 12,
     Rotate = 780,
-    //scale = ???,
+    //scale = ???, 
+    //values in between will cause unpredictable results
 };
 
 struct animdata{//interpolates from point a to point b, then restarts at a
-    float a_x, a_y, a_z, b_x, b_y, b_z;
+    float ax, ay, az, bx, by, bz;
 };
 
 struct subsegmentdata{
@@ -30,13 +31,11 @@ struct animNodeSegment{
     float animspeed;//smaller values are slower
     float animadelay;//time until anim replays, larger is slower
     float unknownfloats[16];//reinvestigate further with cheatengine
-    
     u32 propnodeid;
     u32 subsegmentcount;
     u32 unknown;
     u32 off2subsegmentoffs;
     animsubsegment animSubsegment[subsegmentcount]@ off2subsegmentoffs;
-    
 }[[name(segmentName)]];
 
 animNodeSegment AnimationNode@0x0;

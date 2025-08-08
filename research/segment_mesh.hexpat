@@ -1,77 +1,76 @@
-/*Nicalis3D -mesh segment pattern*/
+//Mesh Segment
 
-#include <std/core.pat>
-#include <std/io>
-enum N3D_MdlTyp : u32{
+enum modeltype:u32{
     Actor = 33881,
-    Prop = 32857,
+    Prop  = 32857,
 };
-struct N3D_ActrHdr{
-    u32 header_count;
-    u32 weight_count;
-    u32 unknown; //has ALWAYS been 16, guess gets subtracted by offset2offset
-    u32 offset2offset; //very bad and likely to break but hasnt yet
-    padding[offset2offset -16]; //change -16 to unknown if it genuinely never changes
-    u32 weight_offset;
+//Prop Specific
+struct propdata{
+    float vx,vy,vz;//vertices positon
+    u8 vcr,vcg,vcb;//vertex color RGB888 
+    u8 unknown1;//not vertex color alpha?
+    float nx,ny,nz;//normal
+    float u,v;//UVs
+};
+//Actor Specific
+struct actordata{
+    float vx,vy,vz;//vertices positon
+    u8 vcr,vcg,vcb;//vertex color RGB888 
+    u8 unknown1;//not vertex color alpha?
+    float nx,ny,nz;//normal
+    float u,v;//UVs
+    u8 boneindex;//should be no larger than bone count
+    u8 unknown[3];
+};
 
+struct actorinfo{
+    u32 unknowncount;//genuinely no idea what this data is for
+    u32 boneweightscount; //u8
+    u32 off2unknownoffs; //add to actorinfo off
+    u32 off2weightsoffs; //add to actorinfo off
+    //may need to be separate 
+    u32 unknownoffs[unknowncount];//genuinely no idea what this data is for
+    u32 boneweightsoffs; //add to actorinfo off, possibly array of size unknowncount +1
 };
-struct N3D_MshHdr{
+
+struct submeshinfo{
+    float bboxminwidth,bboxminlength,bboxminheight;
+    float bboxmaxwidth,bboxmaxlength,bboxmaxheight;
+    u32 submeshfacecount;
+    u32 submeshfaceoff;
+    u32 materialid;
+};
+
+struct meshinfo{
     char name[256];
-    char unknown_related_to_node [28];
-    N3D_MdlTyp model_type;//Prop or Actor
-    u32 submesh_count;
-    u32 vertx_count;
-    u32 index_count;
-    u32 submesh_offset;
-    u32 index_offset;
-    u32 vertx_offset;
-    padding[16];
-    u32 actor_header_offset; //offset for extended header
+    float unknown1[7];//did not encounter any changes when modified
+    modeltype modeltype;//Prop or Actor
+    u32 submeshcount;
+    u32 vertexcount;
+    u32 indexcount;
+    u32 submeshoff;
+    u32 indexoff;
+    u32 vertexoff;
+    u32 unknown2[4];
+    u32 actorinfooff;
 };
-struct N3D_BnWghts{
-    u8 weight;//afaik, one weight per vert
-};
-struct N3D_Indc{
-    u16 index[3];
-};
-struct N3D_SbMsh{
-    float bboxminWidth,bboxminLength,bboxminHeight;
-    float bboxmaxWidth,bboxmaxLength,bboxmaxHeight;
-    u32 submesh_face_count;
-    u32 submesh_face_offset;
-    u32 material_ID;
-};
-struct N3D_PrpDta{
-    float vx,vy,vz; //vert
-    u8 vcr,vcg,vcb;//RGB888 vertex color
-    u8 unknown1;//assumed to be vertex color alpha, does nothing?
-    float nx,ny,nz;//normal
-    float u,v;//UVs
-};
-struct N3D_ActrDta{
-    float vx,vy,vz; //vert
-    u8 vcr,vcg,vcb;//RGB888 vertex color
-    u8 unknown1;
-    float nx,ny,nz;//normal
-    float u,v;//UVs
-    u8 bone_index;//should be no larger than bone count
-    u8 unknown2,unknown3,unknown4; //unknown
-};
-struct N3D_Msh{
-    N3D_MshHdr Header;
-    N3D_SbMsh Submeshes [Header.submesh_count] @ Header.submesh_offset;
-    if(Header.actor_header_offset != 0){
-        N3D_ActrHdr Actor_Header @ Header.actor_header_offset;
-        N3D_BnWghts Weights [Actor_Header.weight_count] @ Header.actor_header_offset+Actor_Header.weight_offset;
-    }
-    match(Header.model_type){
-        (N3D_MdlTyp::Prop): N3D_PrpDta Data[Header.vertx_count] @ Header.vertx_offset;
-        (N3D_MdlTyp::Actor): N3D_ActrDta Data[Header.vertx_count] @ Header.vertx_offset;
-        (_): std::print("idk man neither types found");
-    }
-    N3D_Indc Indices [Header.index_count/3] @ Header.index_offset;
-    std::print(Header.model_type);
 
-}[[name(Header.name)]];
+struct mesh{
+    meshinfo meshinfo;
+    submeshinfo submeshinfo [meshinfo.submeshcount] @ meshinfo.submeshoff;
+    
+    if(meshinfo.actorinfooff != 0){
+        actorinfo @ meshinfo.actorinfooff;
+        u8 boneweights [actorinfo.boneweightscount] @ meshinfo.actorinfooff+actorinfo.boneweightsoffs;
+    }
+    
+    match(meshinfo.modeltype){
+        (modeltype::Prop):propdata propdata[meshinfo.vertexcount] @ meshinfo.vertexoff;
+        (modeltype::Actor):actordata actordata[meshinfo.vertexcount] @ meshinfo.vertexoff;
+        (_): std::print("unknown type found");
+    }
+    
+    u16 index [meshinfo.indexcount] @ meshinfo.indexoff;
+}[[name(meshinfo.name)]];
  
-N3D_Msh Mesh @ 0x0;
+mesh MeshSegment @ 0x0;
