@@ -1,219 +1,74 @@
+#WIP Nicalis 3D importer
+
 from inc_noesis import *
 noesis.logPopup()
 noesis.openDataViewer()
 
-def readUInt32(fp):
-  return int.from_bytes(fp.read(4), byteorder='little', signed=False)
-
-def readString(inputBytes): # reads null terminated string from bytes object
-  output = ''
-  for i in range(0, len(inputBytes)):
-    if inputBytes[i] == 0:
-      return output
-    output += chr(inputBytes[i])
-  return output
-
-def getSegmentThatEndsWith(inputObject, endsWithString): # terrible bodge while I work out something better
-  for attr, value in inputObject.items():
-    if attr.endswith(endsWithString):
-      return value  
-    
-def getSegmentFromID(inputObject, inputID): # fetch segment offsets and name from n3dhdr IDs
-  for attr, value in inputObject.items():
-    noesis.logOutput(str(attr)+"\n")
-    if attr == 'hasSkeleton':# todo, re-write this to only depend on IDs or get hasSkeleton out of dict
-      continue 
-    elif value["ID"] == inputID:
-      return value  
-    
-# N3Dhdr Start
-
-def getN3DSegments(basePath):
-  outputData = {}
-  with open(basePath+'.n3dhdr', 'rb') as hdrFilePointer:
-    # Retrieve amount of segments in file, always starts at 0x100/256bytes
-    hdrFilePointer.seek(256, 0)
-    totalSegments = readUInt32(hdrFilePointer)
-
-    dtaFilePointer = open(basePath+'.n3ddta', 'rb')
-    objectHasSkeleton = False
-    objectName = ''
-    for segmentIndex in range(0, totalSegments):
-      # Layout: ID (4 bytes), Offset (4 bytes), Length (4 bytes)
-      segmentID = readUInt32(hdrFilePointer) # read ID from n3dhdr
-      segmentOffset = readUInt32(hdrFilePointer) # read offset from n3dhdr
-      segmentLength = readUInt32(hdrFilePointer) # read length from n3dhdr
-      dtaFilePointer.seek(segmentOffset, 0)
-      segmentData = dtaFilePointer.read(segmentLength) # read data from n3ddta
-
-      segmentName = ''
-      if segmentIndex == 0: # check if n3ddta has valid skeleton info
-        objectName = readString(segmentData)
-        skeletonName = readString(segmentData[256:])
-        skinName = readString(segmentData[384:])
-        if skeletonName.startswith(objectName) and skinName.startswith(objectName):
-          objectHasSkeleton = True
-        outputData['hasSkeleton'] = objectHasSkeleton
-
-      if segmentIndex == 1 and objectHasSkeleton: # skeleton info offset starts with joint count
-        segmentName = objectName + '-skeleton' # because of that, we need to name it manually
-      else:
-        segmentName = readString(segmentData) # if there's no skeleton data it starts with segment name
-
-      outputData[segmentName] = {'offset': segmentOffset, 'length': segmentLength, 'ID': segmentID}
-      #noesis.logOutput("Segment: '" + segmentName + "' ID: '" + str(segmentID)+"'\n") # prints segment names and their IDs
-
-    hdrFilePointer.close()
-    dtaFilePointer.close()
-  return outputData
-
 def registerNoesisTypes():
-  handle = noesis.register("Cave Story 3D Data",".n3ddta")
-  noesis.setHandlerTypeCheck(handle, CheckType)
-  noesis.setHandlerLoadModel(handle, LoadModel)
+  handle = noesis.register("Nicalis 3D Data",".n3ddta")
+  noesis.setHandlerTypeCheck(handle, n3dCheckType)
+  noesis.setHandlerLoadModel(handle, n3dLoadModel)
+  # noesis.addOption(handle, "option name", "option description", noesisflags (Do Later)
   return 1
+
+def getLevelDescriptor(n3dSegment,bs):
+  for id in n3dSegment: #Assign type to descriptor
+    if id == '2186838753': #This ID is consistent
+      noesis.logOutput("level-descriptor found "+"\n")
+      n3dSegment['2186838753']['type'] = 'LEVEL_DESC'
+      continue
+
+  bs.seek(n3dSegment['2186838753']['offset']+256)
+  move_x1,move_y1,move_z1 = bs.readFloat(),bs.readFloat(),bs.readFloat() # move transform
+  move_x2,move_y2,move_z2 = bs.readFloat(),bs.readFloat(),bs.readFloat() # duplicate of move transform?
+  shadingtemp,shadingweight,_,_, = bs.readFloat(),bs.readFloat(),bs.readFloat(),bs.readFloat()
   
-def CheckType(data):
+  segmentTypes = ['PROPNODE','TYPE2','LIGHT','TYPE4','ANIMNODE','TEXTURE','MATERIAL','MESH','TYPE9','SKIN','SKELETON']
+  for i in range (0,11):
+    bitstreamoffset = 4*i
+    bs.seek(n3dSegment['2186838753']['offset']+296+bitstreamoffset)
+    typeCount = bs.readUInt()
+    bs.seek(n3dSegment['2186838753']['offset']+296+bitstreamoffset+44)
+    typeOffset = bs.readUInt()
+    bs.seek(n3dSegment['2186838753']['offset']+typeOffset)
+    for x in range (0,typeCount):
+      currentType = segmentTypes[i]
+      id = bs.readUInt()
+      if n3dSegment.get(str(id)) != None:
+        n3dSegment[str(id)].update({'type':str(currentType)})
+  return
+    
+ 
+def getN3DSegments(bs,bs2):
+  bs2.seek(256)
+  segmentCount = bs2.readUInt()
+  n3dSegmentData = {}
+  n3dSegment = {}
+  for segmentIndex in range(segmentCount):
+    segmentID, segmentOffset, segmentSize = bs2.readUInt(),bs2.readUInt(),bs2.readUInt()
+    bs.seek(segmentOffset)
+    segmentName = bs.readString()
+    n3dSegmentData = {'name':segmentName,'offset':segmentOffset,'size':segmentSize,'type':'UNKNOWN'}
+    n3dSegment.update({str(segmentID):n3dSegmentData})
+  getLevelDescriptor(n3dSegment,bs)
+  noesis.logOutput(str(n3dSegment.values()))
+  return 
+
+def n3dCheckType(data):
   bs = NoeBitStream(data)
   return 1
 
-def Align(bs, n):
-  value = bs.tell() % n
-  if (value):
-    bs.seek(n - value, 1)
-    
-    
-def LoadModel(data, mdlList):
+def n3dLoadModel(data, mdlList):
   ctx = rapi.rpgCreateContext()
-  rapi.setPreviewOption("drawAllModels","1") # sets Draw all models to 1 by default, both values must be strings
+  
   bs = NoeBitStream(data)
-  bs.setEndian(NOE_LITTLEENDIAN)
-
-  currentFilePath = noesis.getSelectedFile()
-  baseFilePath = currentFilePath[:-7]
-  n3dSegments = getN3DSegments(baseFilePath)
-  texList = []
-  matList = []
-
-  for name, value in n3dSegments.items():# even worse bodge, repeats for every section with -mesh in name and then the offset is used
-    if name.endswith("-mesh"):
-      #noesis.logOutput(name + "\n" + str(value) + "\n\n") #best looking formatting for navigating this nightmare right now
-      rapi.rpgSetName(name)
-      
-      #mesh section header
-      meshSectionOffset = value['offset'];
-      bs.seek(meshSectionOffset+284) #data starts past 256bytes/0xFF, just skipping these prop -node related 28bytes 
-      mshType, matCount, vCount, idxCount, matOffs, idxOffs, vOffs = bs.readUInt(),bs.readUInt(),bs.readUInt(),bs.readUInt(),bs.readUInt(),bs.readUInt(),bs.readUInt()
-
-      if mshType == 33881:
-          vStride = 0x28
-      elif mshType == 32857:
-          vStride = 0x24
-      else:
-          noesis.doException("Unknown Model Type!")
-      
-      #extra header exclusive to actors
-      bs.seek(meshSectionOffset+328) # this value is zero in props as far as i know 
-      actOffs = bs.readUInt()
-      # noesis.logOutput(str(actOffs))
-      
-      #vertices
-      bs.seek(meshSectionOffset + vOffs)
-      vBuffer = bs.readBytes(vCount * vStride)
-      rapi.rpgClearBufferBinds()
-      rapi.rpgBindPositionBufferOfs(vBuffer, noesis.RPGEODATA_FLOAT, vStride,0)#bytes for positions, dataType, stride
-      rapi.rpgBindColorBufferOfs(vBuffer,noesis.RPGEODATA_UBYTE, vStride,0x0C,4)
-      rapi.rpgBindNormalBufferOfs(vBuffer, noesis.RPGEODATA_FLOAT, vStride,0x10)
-      rapi.rpgBindUV1BufferOfs(vBuffer, noesis.RPGEODATA_FLOAT, vStride,0x1C)
-      if mshType == 3881:
-        rapi.rpgBindBoneIndexBufferOfs(vBuffer, noesis.RPGEODATA_UBYTE, vStride,0x24, 0x1)
-      
-        wBuffer = b'x\FF' * vCount #create dummy wBuffer of weight 1 
-        rapi.rpgBindBoneWeightBuffer(wBuffer, noesis.RPGEODATA_UBYTE, 0x1, 0x1) # boneweights bytes, data type, stride, weights per vert
-      
-      #submesh headers?
-      for matCounter in range(matCount):
-        matStride = matCounter * 0x24
-        bs.seek(meshSectionOffset + matOffs + matStride)
-        _,_,_,_,_,_,matFaceCount,matFaceOffset,matID = bs.readFloat(),bs.readFloat(),bs.readFloat(),bs.readFloat(),bs.readFloat(),bs.readFloat(),bs.readUInt(),bs.readUInt(),bs.readUInt()
-        
-        #materials
-        materialSegmentOffset = getSegmentFromID(n3dSegments,matID)['offset'];
-        bs.seek(materialSegmentOffset)
-        matName = bs.readString()
-        rapi.rpgSetMaterial(matName)# if materials share a name they are merged
-        bs.seek(materialSegmentOffset+256)
-        texID,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_, = bs.readUInt(),bs.readUInt(),bs.readUInt(),bs.readUInt(),bs.readFloat(),bs.readFloat(),bs.readFloat(),bs.readFloat(),bs.readFloat(),bs.readFloat(),bs.readFloat(),bs.readFloat(),bs.readFloat(),bs.readFloat(),bs.readFloat(),bs.readUInt()
-
-        #textures
-        textureSegmentOffset = getSegmentFromID(n3dSegments,texID)['offset'];
-        bs.seek(textureSegmentOffset)
-        texName = bs.readString()
-        bs.seek(textureSegmentOffset+36)
-        texWidth,texHeight,texFormat,_,texBufferOffs = bs.readUInt(),bs.readUInt(),bs.readUInt(),bs.readUInt(),bs.readUInt()
-        if texFormat == 4:
-          textureData = rapi.imageDecodeRaw(bs.readBytes(texWidth*texHeight*2),texWidth,texHeight,'b5g6r5')
-        elif texFormat == 2:
-          textureData = rapi.imageDecodeRaw(bs.readBytes(texWidth*texHeight*2),texWidth,texHeight,'a4b4g4r4')
-        format = noesis.NOESISTEX_RGBA32
-        
-        tex = NoeTexture(str(texName), texWidth, texHeight, textureData, format)
-        texList.append(tex)
-        mat = NoeMaterial(str(matName),str(texName))
-        matList.append(mat)
-        
-        noesis.logOutput(str(texList)+"\n"+str(matList)+"\n")
-        
-        #indices
-        bs.seek(meshSectionOffset + idxOffs+matFaceOffset*2)
-        idxBuffer = bs.readBytes(matFaceCount*2)
-        rapi.rpgCommitTriangles(idxBuffer,noesis.RPGEODATA_USHORT, matFaceCount,noesis.RPGEO_TRIANGLE)
-
-      
-      if n3dSegments['hasSkeleton']:
-        #jump to skel section, grab names and parenting info
-        jointNames = []
-        jointParents = []
-        jointMatrices = []
-        skeletonSegmentOffset = getSegmentThatEndsWith(n3dSegments, 'skeleton')['offset'];
-        bs.seek(skeletonSegmentOffset)
-        jointCount = bs.readUInt()
-        unk = bs.readUInt()
-        for i in range(jointCount):
-          jointNames.append(bs.readString())
-          Align(bs,4)
-          #very annoying alignment going on, cheat and jump to 4 directly, seems consistent
-          a = 0
-          while(a - 4): 
-            a = bs.readUInt()
-          if i:#skip 0x70 bytes for root and 0x58 for others to jump to parent info directly.
-            bs.seek(0x50,1)
-          else:
-            bs.seek(0x68,1) 
-          jointParents.append(bs.readByte())
-          Align(bs,4)
-          
-        #jump to bone bind transform section
-        boneBindSegmentOffset = getSegmentThatEndsWith(n3dSegments, 'skin')['offset'];
-        bs.seek(boneBindSegmentOffset+(256*3)+80)
-        #bs.seek(0x17F0)
-        for _ in range(jointCount):
-          jointMatrices.append(NoeMat44.fromBytes(bs.readBytes(0x40)).toMat43().inverse())
-        
-        #we have all the bone info, constructing the skeleton
-        jointList = []
-        for i, (parent,name, mat) in enumerate(zip(jointParents,jointNames,jointMatrices)):
-          joint = NoeBone(i, name, mat, None, parent)
-          jointList.append(joint)
+  #Load Header and give it a bitstream
+  headerFileName = rapi.getExtensionlessName(rapi.getInputName()) + ".n3dhdr" 
+  if rapi.checkFileExists(headerFileName):
+    data2 = rapi.loadIntoByteArray(headerFileName)
+  bs2 = NoeBitStream(data2)
   
-  try:
-    mdl = rapi.rpgConstructModel()
-  except:
-    mdl = NoeModel()
-  rapi.setPreviewOption("setAngOfs", "0 -90 0")
-  if n3dSegments['hasSkeleton']:
-    mdl.setBones(jointList)
-  mdl.setModelMaterials(NoeModelMaterials(texList, matList))
-  mdlList.append(mdl)
-  
+  modelName = bs2.readString()
+  n3dSegments = getN3DSegments(bs,bs2)#Fetch segment info and return a dict
+  noesis.logOutput("Model file: '"+str(modelName) +"' Loaded. "+"\n")
   return 1
