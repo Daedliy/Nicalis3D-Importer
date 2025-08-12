@@ -11,6 +11,10 @@ def registerNoesisTypes():
   # noesis.addOption(handle, "option name", "option description", noesisflags (Do Later)
   return 1
 
+def n3dCheckType(data):
+  bs = NoeBitStream(data)
+  return 1
+
 def getLevelDescriptor(n3dSegment,bs):
   for id in n3dSegment: #Assign type to descriptor
     if id == '2186838753': #This ID is consistent
@@ -36,10 +40,11 @@ def getLevelDescriptor(n3dSegment,bs):
       id = bs.readUInt()
       if n3dSegment.get(str(id)) != None:
         n3dSegment[str(id)].update({'type':str(currentType)})
+      else:
+        n3dSegment[str(id)] = {'name':'missingsegment','offset':0,'size':0,'type':'MISSING'}
   return
     
- 
-def getN3DSegments(bs,bs2):
+def listN3DSegments(bs,bs2):
   bs2.seek(256)
   segmentCount = bs2.readUInt()
   n3dSegmentData = {}
@@ -51,16 +56,75 @@ def getN3DSegments(bs,bs2):
     n3dSegmentData = {'name':segmentName,'offset':segmentOffset,'size':segmentSize,'type':'UNKNOWN'}
     n3dSegment.update({str(segmentID):n3dSegmentData})
   getLevelDescriptor(n3dSegment,bs)
-  noesis.logOutput(str(n3dSegment.values()))
-  return 
+  return n3dSegment
 
-def n3dCheckType(data):
-  bs = NoeBitStream(data)
-  return 1
+def fetchSegmentsOfType(n3dSegmentDict,TYPE):#create smaller dict of desired type
+  requestedSegments = {}
+  for id in n3dSegmentDict:
+    for key, value in n3dSegmentDict[id].items():
+      if value == str(TYPE):
+        requestedSegments.update({id:n3dSegmentDict.get(id)})
+  return requestedSegments
+        
+def getMesh(bs,n3dSegmentDict,mdlList):
+  meshSegments = fetchSegmentsOfType(n3dSegmentDict,'MESH')
+  for id,value in meshSegments.items():
+    bs.seek (meshSegments[id]['offset'])
+    meshSegmentName = bs.readString()
+    rapi.rpgSetName(meshSegmentName)
+    bs.seek (meshSegments[id]['offset']+256)
+    _,_,_,_,_,_,_ = bs.readFloat(),bs.readFloat(),bs.readFloat(),bs.readFloat(),bs.readFloat(),bs.readFloat(),bs.readFloat()
+    modelType,submeshCount,vertexCount,indexCount,submeshOffset = bs.readUInt(),bs.readUInt(),bs.readUInt(),bs.readUInt(),bs.readUInt()
+    indexOffset,vertexOffset,_,_,_,_ = bs.readUInt(),bs.readUInt(),bs.readUInt(),bs.readUInt(),bs.readUInt(),bs.readUInt()
+    actorInfoOffset = bs.readUInt()
+    if modelType == 33881:
+      dataStride = 0x28
+    elif modelType == 32857:
+      dataStride = 0x24
+    else:
+      noesis.doException("Unknown Model Type!")
+    
+    #vertices
+    bs.seek(meshSegments[id]['offset']+vertexOffset)
+    vertexBuffer = bs.readBytes(vertexCount * dataStride)
+    rapi.rpgClearBufferBinds()
+    rapi.rpgBindPositionBufferOfs(vertexBuffer, noesis.RPGEODATA_FLOAT, dataStride,0)#bytes for positions, dataType, stride
+    rapi.rpgBindColorBufferOfs(vertexBuffer,noesis.RPGEODATA_UBYTE, dataStride,0x0C,4)
+    rapi.rpgBindNormalBufferOfs(vertexBuffer, noesis.RPGEODATA_FLOAT, dataStride,0x10)
+    rapi.rpgBindUV1BufferOfs(vertexBuffer, noesis.RPGEODATA_FLOAT, dataStride,0x1C)
+    if modelType == 33881:
+      rapi.rpgBindBoneIndexBufferOfs(vertexBuffer, noesis.RPGEODATA_UBYTE, dataStride,0x24, 0x1)
+      bs.seek (meshSegments[id]['offset']+actorInfoOffset)
+      unknownCount,boneWeightCount,offsetToUnknownOffset,offsetToBoneWeightOffset = bs.readUInt(),bs.readUInt(),bs.readUInt(),bs.readUInt()
+      bs.seek (meshSegments[id]['offset']+actorInfoOffset+offsetToBoneWeightOffset)
+      boneWeightOffset = bs.readUInt()
+      bs.seek (meshSegments[id]['offset']+actorInfoOffset+boneWeightOffset)
+      boneWeightBuffer = bs.readBytes(boneWeightCount)
+      rapi.rpgBindBoneWeightBuffer(boneWeightBuffer, noesis.RPGEODATA_UBYTE, 0x1, 0x1)#boneweights, datatype, stride, weights per-vert
+      
+    for submeshIndex in range(submeshCount):
+      submeshStride = submeshIndex * 0x24
+      bs.seek (meshSegments[id]['offset']+ submeshOffset + submeshStride)
+      meshBBoxMinWidth,meshBBoxMinLength,MeshBBoxMinHeight = bs.readFloat(),bs.readFloat(),bs.readFloat()
+      meshBBoxMaxWidth,meshBBoxMaxLength,MeshBBoxMaxHeight = bs.readFloat(),bs.readFloat(),bs.readFloat()
+      submeshFaceCount,submeshFaceOffset,matID = bs.readUInt(),bs.readUInt(),bs.readUInt()
+
+      
+      #indices
+      bs.seek (meshSegments[id]['offset']+ indexOffset+submeshFaceOffset*2)
+      indexBuffer = bs.readBytes(submeshFaceCount*2)
+      rapi.rpgCommitTriangles(indexBuffer,noesis.RPGEODATA_USHORT, submeshFaceCount,noesis.RPGEO_TRIANGLE)
+      
+  try:
+    mdl = rapi.rpgConstructModel()
+  except:
+    mdl = NoeModel()
+  mdlList.append(mdl)
+  noesis.logOutput(str(vertexOffset)+"\n")
+  return mdlList
 
 def n3dLoadModel(data, mdlList):
   ctx = rapi.rpgCreateContext()
-  
   bs = NoeBitStream(data)
   #Load Header and give it a bitstream
   headerFileName = rapi.getExtensionlessName(rapi.getInputName()) + ".n3dhdr" 
@@ -69,6 +133,9 @@ def n3dLoadModel(data, mdlList):
   bs2 = NoeBitStream(data2)
   
   modelName = bs2.readString()
-  n3dSegments = getN3DSegments(bs,bs2)#Fetch segment info and return a dict
+  n3dSegmentDict = listN3DSegments(bs,bs2)#Fetch segment info and return a dict
+  getMesh(bs,n3dSegmentDict,mdlList)
+  #noesis.logOutput(str(n3dSegmentDict)+"\n") # Prints all segments
   noesis.logOutput("Model file: '"+str(modelName) +"' Loaded. "+"\n")
+  
   return 1
