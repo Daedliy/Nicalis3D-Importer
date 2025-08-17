@@ -96,7 +96,9 @@ def getMaterial(bs,materialID,materialSegments,textureSegments,texList,matList):
     bs.seek (materialSegments[str(materialID)]['offset'])
     materialName = bs.readString()
     bs.seek (materialSegments[str(materialID)]['offset']+256)
-    textureID = bs.readUInt()
+    textureID,_,_,_ = [bs.readUInt() for _ in range(4)]
+    _,_,_,_,_,_,_,_,_,_,_ = [bs.readFloat() for _ in range(11)]
+    materialBlendMode = bs.readUInt()
     rapi.rpgSetMaterial(materialName)# if materials share a name they are merged
   #texture
   if textureID != 0:
@@ -118,7 +120,11 @@ def getMaterial(bs,materialID,materialSegments,textureSegments,texList,matList):
   else:
     material = NoeMaterial(str(materialName),None)
     noesis.logOutput("Material '"+str(materialName)+"' has no texture\n")
-  #material.flags =
+  if materialBlendMode == 43: #Additive Blend Mode
+    material.setBlendMode("GL_ONE","GL_ONE")
+  elif materialBlendMode == 11: #Alpha Blend Mode, luminance too high?
+    material.setBlendMode("GL_SRC_ALPHA","GL_ONE")
+    print("put material flag here")
   matList.append(material)
   return 
 
