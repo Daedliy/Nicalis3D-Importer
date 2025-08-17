@@ -20,14 +20,13 @@ def getLevelDescriptor(n3dSegment,bs):
     if segmentID == '2186838753': #This ID is consistent
       noesis.logOutput("!!! LEVELDESC found "+"\n")
       n3dSegment['2186838753']['type'] = 'LEVELDESC'
-      continue
+      break
 
   bs.seek(n3dSegment['2186838753']['offset']+256)
-  move_x1,move_y1,move_z1 = bs.readFloat(),bs.readFloat(),bs.readFloat() # move transform
-  move_x2,move_y2,move_z2 = bs.readFloat(),bs.readFloat(),bs.readFloat() # duplicate of move transform?
-  shadingtemp,shadingweight,_,_, = bs.readFloat(),bs.readFloat(),bs.readFloat(),bs.readFloat()
+  move_x1,move_y1,move_z1,move_x2,move_y2,move_z2,shadingtemp,shadingweight,_,_, = [bs.readFloat() for _ in range(10)]
   
-  segmentTypes = ['PROPNODE','PROPNODE2?','LIGHT','TYPE4','ANIMNODE','TEXTURE','MATERIAL','MESH','TYPE9','SKIN','SKELETON']
+  #Second entry in segmentTypes may just be extra space for propnodes (???)
+  segmentTypes = ['PROPNODE','PROPNODE','LIGHT','TYPE4','ANIMNODE','TEXTURE','MATERIAL','MESH','TYPE9','SKIN','SKELETON']
   for i in range (0,11):
     bitstreamoffset = 4*i
     bs.seek(n3dSegment['2186838753']['offset']+296+bitstreamoffset)
@@ -40,10 +39,8 @@ def getLevelDescriptor(n3dSegment,bs):
       id = bs.readUInt()
       if n3dSegment.get(str(id)) != None:
         n3dSegment[str(id)].update({'type':str(currentType)})
-        noesis.logOutput(str(currentType)+" Found! \n")
       else:
         n3dSegment[str(id)] = {'name':'missingsegment','offset':0,'size':0,'type':'MISSING'}
-        noesis.logOutput("!!! MISSING Found! \n")
   return
     
 def listN3DSegments(bs,bs2):
@@ -52,12 +49,17 @@ def listN3DSegments(bs,bs2):
   n3dSegmentData = {}
   n3dSegment = {}
   for segmentIndex in range(segmentCount):
-    segmentID, segmentOffset, segmentSize = bs2.readUInt(),bs2.readUInt(),bs2.readUInt()
+    segmentID, segmentOffset, segmentSize = [bs2.readUInt() for _ in range(3)]
     bs.seek(segmentOffset)
-    segmentName = bs.readString()
+    try:
+      segmentName = bs.readString() 
+    except:
+      segmentName = "NO NAME / NOT UTF8 ENCODED"
     n3dSegmentData = {'name':segmentName,'offset':segmentOffset,'size':segmentSize,'type':'UNKNOWN'}
     n3dSegment.update({str(segmentID):n3dSegmentData})
   getLevelDescriptor(n3dSegment,bs)
+  for k,v in n3dSegment.items():
+    print(k,v)
   return n3dSegment
 
 def fetchSegmentsOfType(n3dSegmentDict,TYPE):#create smaller dict of desired type
@@ -79,11 +81,11 @@ def getPropNode(bs,propNodeSegments,requestedID):
     targetID = bs.readUInt()
     if str(requestedID) == str(targetID):
       PropNodeID = str(id)
-      continue
+      break
   bs.seek (propNodeSegments[PropNodeID]['offset'])
   propNodeName = bs.readString()
   bs.seek (propNodeSegments[PropNodeID]['offset']+256)
-  selfID,_,_ = bs.readUInt(),bs.readUInt(),bs.readUInt()
+  selfID,_,_ = [bs.readUInt() for _ in range(3)]
 
   transformMatrix = NoeMat44.fromBytes(bs.readBytes(0x40)).toMat43() # Transforms Mesh
   rapi.rpgSetTransform(transformMatrix)
@@ -102,7 +104,7 @@ def getMaterial(bs,materialID,materialSegments,textureSegments,texList,matList):
       bs.seek (textureSegments[str(textureID)]['offset'])
       textureName = bs.readString()
       bs.seek (textureSegments[str(textureID)]['offset']+36)
-      texWidth,texHeight,texFormat,_,texBufferOffs = bs.readUInt(),bs.readUInt(),bs.readUInt(),bs.readUInt(),bs.readUInt()
+      texWidth,texHeight,texFormat,_,texBufferOffs = [bs.readUInt() for _ in range(5)]
       if texFormat == 4:
         textureData = rapi.imageDecodeRaw(bs.readBytes(texWidth*texHeight*2),texWidth,texHeight,'b5g6r5')
       elif texFormat == 2:
@@ -129,10 +131,9 @@ def getMesh(bs,n3dSegmentDict,mdlList):
     meshSegmentName = bs.readString()
     rapi.rpgSetName(meshSegmentName)
     bs.seek (meshSegments[meshID]['offset']+256)
-    _,_,_,_,_,_,_ = bs.readFloat(),bs.readFloat(),bs.readFloat(),bs.readFloat(),bs.readFloat(),bs.readFloat(),bs.readFloat()
-    modelType,submeshCount,vertexCount,indexCount,submeshOffset = bs.readUInt(),bs.readUInt(),bs.readUInt(),bs.readUInt(),bs.readUInt()
-    indexOffset,vertexOffset,_,_,_,_ = bs.readUInt(),bs.readUInt(),bs.readUInt(),bs.readUInt(),bs.readUInt(),bs.readUInt()
-    actorInfoOffset = bs.readUInt()
+    _,_,_,_,_,_,_ = [bs.readFloat() for _ in range(7)]
+    modelType,submeshCount,vertexCount,indexCount,submeshOffset,indexOffset = [bs.readUInt() for _ in range(6)]
+    vertexOffset,_,_,_,_,actorInfoOffset = [bs.readUInt() for _ in range(6)]
     if modelType == 33881:
       dataStride = 0x28
       noesis.logOutput("MESH Type: Actor "+"\n")
@@ -155,7 +156,7 @@ def getMesh(bs,n3dSegmentDict,mdlList):
     if modelType == 33881:
       rapi.rpgBindBoneIndexBufferOfs(vertexBuffer, noesis.RPGEODATA_UBYTE, dataStride,0x24, 0x1)
       bs.seek (meshSegments[meshID]['offset']+actorInfoOffset)
-      unknownCount,boneWeightCount,offsetToUnknownOffset,offsetToBoneWeightOffset = bs.readUInt(),bs.readUInt(),bs.readUInt(),bs.readUInt()
+      unknownCount,boneWeightCount,offsetToUnknownOffset,offsetToBoneWeightOffset = [bs.readUInt() for _ in range(4)]
       bs.seek (meshSegments[meshID]['offset']+actorInfoOffset+offsetToBoneWeightOffset)
       boneWeightOffset = bs.readUInt()
       bs.seek (meshSegments[meshID]['offset']+actorInfoOffset+boneWeightOffset)
@@ -165,9 +166,9 @@ def getMesh(bs,n3dSegmentDict,mdlList):
     for submeshIndex in range(submeshCount):
       submeshStride = submeshIndex * 0x24
       bs.seek (meshSegments[meshID]['offset']+ submeshOffset + submeshStride)
-      meshBBoxMinWidth,meshBBoxMinLength,MeshBBoxMinHeight = bs.readFloat(),bs.readFloat(),bs.readFloat()
-      meshBBoxMaxWidth,meshBBoxMaxLength,MeshBBoxMaxHeight = bs.readFloat(),bs.readFloat(),bs.readFloat()
-      submeshFaceCount,submeshFaceOffset,materialID = bs.readUInt(),bs.readUInt(),bs.readUInt()
+      meshBBoxMinWidth,meshBBoxMinLength,meshBBoxMinHeight = [bs.readFloat() for _ in range(3)]
+      meshBBoxMaxWidth,meshBBoxMaxLength,meshBBoxMaxHeight = [bs.readFloat() for _ in range(3)]
+      submeshFaceCount,submeshFaceOffset,materialID = [bs.readUInt() for _ in range(3)]
       
       materialSegments = fetchSegmentsOfType(n3dSegmentDict,'MATERIAL')
       textureSegments = fetchSegmentsOfType(n3dSegmentDict,'TEXTURE')
