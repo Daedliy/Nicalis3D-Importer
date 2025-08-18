@@ -12,14 +12,16 @@ def registerNoesisTypes():
   return 1
 
 def n3dCheckType(data):
-  bs = NoeBitStream(data)
+  if rapi.checkFileExists(rapi.getExtensionlessName(rapi.getInputName()) + ".n3dhdr" ) == 0:
+    print("Invalid file or header is missing")
+    return 0
   return 1
 
 def getLevelDescriptor(n3dSegment,bs):
   for segmentID in n3dSegment: #Assign type to descriptor
     if segmentID == '2186838753': #This ID is consistent
-      noesis.logOutput("!!! LEVELDESC found "+"\n")
       n3dSegment['2186838753']['type'] = 'LEVELDESC'
+      print("Found level-descriptor, assigning segment types...")
       break
 
   bs.seek(n3dSegment['2186838753']['offset']+256)
@@ -124,7 +126,6 @@ def getMaterial(bs,materialID,materialSegments,textureSegments,texList,matList):
     material.setBlendMode("GL_ONE","GL_ONE")
   elif materialBlendMode == 11: #Alpha Blend Mode, luminance too high?
     material.setBlendMode("GL_SRC_ALPHA","GL_ONE")
-    print("put material flag here")
   matList.append(material)
   return 
 
@@ -138,18 +139,18 @@ def getMesh(bs,n3dSegmentDict,mdlList):
     rapi.rpgSetName(meshSegmentName)
     bs.seek (meshSegments[meshID]['offset']+256)
     _,_,_,_,_,_,_ = [bs.readFloat() for _ in range(7)]
-    modelType,submeshCount,vertexCount,indexCount,submeshOffset,indexOffset = [bs.readUInt() for _ in range(6)]
+    meshType,submeshCount,vertexCount,indexCount,submeshOffset,indexOffset = [bs.readUInt() for _ in range(6)]
     vertexOffset,_,_,_,_,actorInfoOffset = [bs.readUInt() for _ in range(6)]
-    if modelType == 33881:
+    if meshType == 33881:
       dataStride = 0x28
-      noesis.logOutput("MESH Type: Actor "+"\n")
-    elif modelType == 32857:
+      print("Loaded actor mesh: " + meshSegmentName)
+    elif meshType == 32857:
       dataStride = 0x24
       propNodeSegments = fetchSegmentsOfType(n3dSegmentDict,'PROPNODE')
       getPropNode(bs,propNodeSegments,meshID)
-      noesis.logOutput("MESH Type: Prop "+"\n")
+      print("Loaded prop mesh: " + meshSegmentName)
     else:
-      noesis.doException("Unknown MESH Type!")
+      noesis.doException("Unknown mesh type!")
     
     #vertices
     bs.seek(meshSegments[meshID]['offset']+vertexOffset)
@@ -159,7 +160,7 @@ def getMesh(bs,n3dSegmentDict,mdlList):
     rapi.rpgBindColorBufferOfs(vertexBuffer,noesis.RPGEODATA_UBYTE, dataStride,0x0C,4)
     rapi.rpgBindNormalBufferOfs(vertexBuffer, noesis.RPGEODATA_FLOAT, dataStride,0x10)
     rapi.rpgBindUV1BufferOfs(vertexBuffer, noesis.RPGEODATA_FLOAT, dataStride,0x1C)
-    if modelType == 33881:
+    if meshType == 33881:
       rapi.rpgBindBoneIndexBufferOfs(vertexBuffer, noesis.RPGEODATA_UBYTE, dataStride,0x24, 0x1)
       bs.seek (meshSegments[meshID]['offset']+actorInfoOffset)
       unknownCount,boneWeightCount,offsetToUnknownOffset,offsetToBoneWeightOffset = [bs.readUInt() for _ in range(4)]
@@ -192,20 +193,44 @@ def getMesh(bs,n3dSegmentDict,mdlList):
     mdl = NoeModel()
   mdl.setModelMaterials(NoeModelMaterials(texList, matList))
   mdlList.append(mdl)
-  #is erroring out on some models, investigate
-  #noesis.logOutput(str(vertexOffset)+"\n")
   return mdlList
 
 def n3dLoadModel(data, mdlList):
   ctx = rapi.rpgCreateContext()
   bs = NoeBitStream(data)
-  #Load Header and give it a bitstream
-  headerFileName = rapi.getExtensionlessName(rapi.getInputName()) + ".n3dhdr" 
-  if rapi.checkFileExists(headerFileName):
-    data2 = rapi.loadIntoByteArray(headerFileName)
-  bs2 = NoeBitStream(data2)
   
+  #Load Model File Header
+  headerFileName = rapi.getExtensionlessName(rapi.getInputName()) + ".n3dhdr" 
+  if rapi.checkFileExists(headerFileName) !=0:
+    data2 = rapi.loadIntoByteArray(headerFileName)
+    bs2 = NoeBitStream(data2)
   modelName = bs2.readString()
+  
+  #Load External Animations
+  animDataFileName = rapi.getDirForFilePath(rapi.getInputName()) + "anim\\anim" + modelName[3:] + ".n3ddta"
+  animHeaderFileName = rapi.getDirForFilePath(rapi.getInputName()) + "anim\\anim" + modelName[3:] + ".n3dhdr"
+  if rapi.checkFileExists(animDataFileName) !=0 and rapi.checkFileExists(animHeaderFileName) !=0:
+    data3,data4 = rapi.loadIntoByteArray(animDataFileName),rapi.loadIntoByteArray(animHeaderFileName)
+    bs3,bs4 = NoeBitStream(data3),NoeBitStream(data4)
+    print("Found animation data file: "+ animDataFileName)
+    print("Found animation header file: "+ animHeaderFileName)
+    animFileName = bs4.readString()
+    print("Animation file name: " + animFileName)
+
+  #Load External Material Animation 
+  matAnimFileName = rapi.getExtensionlessName(rapi.getInputName()) + ".mat" 
+  if rapi.checkFileExists(matAnimFileName) !=0:
+    data5 = rapi.loadIntoByteArray(matAnimFileName)
+    bs5 = NoeBitStream(data5)
+    print("Found material animation file: "+ matAnimFileName)
+
+  #Load External Camera Info (???)
+  camFileName = rapi.getExtensionlessName(rapi.getInputName()) + ".cam" 
+  if rapi.checkFileExists(camFileName) !=0:
+    data6 = rapi.loadIntoByteArray(camFileName)
+    bs6 = NoeBitStream(data6)
+    print("Found camera file: "+ camFileName)
+  
   n3dSegmentDict = listN3DSegments(bs,bs2)#Fetch segment info and return a dict
   getMesh(bs,n3dSegmentDict,mdlList)
   noesis.logOutput("Model file: '"+str(modelName) +"' Loaded. "+"\n")
