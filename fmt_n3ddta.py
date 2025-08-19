@@ -17,6 +17,13 @@ def n3dCheckType(data):
     return 0
   return 1
 
+def uInitString(bs,bufferSize): #Moves data pointer and returns string
+  readString = bs.readString()
+  stringLength = (len(readString))
+  if (stringLength):
+    bs.seek(bufferSize - stringLength -1, 1)
+    return readString
+  
 def getLevelDescriptor(n3dSegment,bs):
   for segmentID in n3dSegment: #Assign type to descriptor
     if segmentID == '2186838753': #This ID is consistent
@@ -26,7 +33,6 @@ def getLevelDescriptor(n3dSegment,bs):
 
   bs.seek(n3dSegment['2186838753']['offset']+256)
   move_x1,move_y1,move_z1,move_x2,move_y2,move_z2,shadingtemp,shadingweight,_,_, = [bs.readFloat() for _ in range(10)]
-  
   #Second entry in segmentTypes may just be extra space for propnodes (???)
   segmentTypes = ['PROPNODE','PROPNODE','LIGHT','TYPE4','ANIMNODE','TEXTURE','MATERIAL','MESH','TYPE9','SKIN','SKELETON']
   for i in range (0,11):
@@ -67,8 +73,8 @@ def listN3DSegments(bs,bs2):
 def fetchSegmentsOfType(n3dSegmentDict,TYPE):#create smaller dict of desired type
   requestedSegments = {}
   for id in n3dSegmentDict:
-    for key, value in n3dSegmentDict[id].items():
-      if value == str(TYPE):
+    for k,v in n3dSegmentDict[id].items():
+      if v == str(TYPE):
         requestedSegments.update({id:n3dSegmentDict.get(id)})
   return requestedSegments
 
@@ -85,8 +91,7 @@ def getPropNode(bs,propNodeSegments,requestedID):
       PropNodeID = str(id)
       break
   bs.seek (propNodeSegments[PropNodeID]['offset'])
-  propNodeName = bs.readString()
-  bs.seek (propNodeSegments[PropNodeID]['offset']+256)
+  propNodeName = uInitString(bs,256)
   selfID,_,_ = [bs.readUInt() for _ in range(3)]
 
   transformMatrix = NoeMat44.fromBytes(bs.readBytes(0x40)).toMat43() # Transforms Mesh
@@ -96,8 +101,7 @@ def getMaterial(bs,materialID,materialSegments,textureSegments,texList,matList):
   #material
   for material,value in materialSegments.items():
     bs.seek (materialSegments[str(materialID)]['offset'])
-    materialName = bs.readString()
-    bs.seek (materialSegments[str(materialID)]['offset']+256)
+    materialName = uInitString(bs,256)
     textureID,_,_,_ = [bs.readUInt() for _ in range(4)]
     _,_,_,_,_,_,_,_,_,_,_ = [bs.readFloat() for _ in range(11)]
     materialBlendMode = bs.readUInt()
@@ -106,8 +110,7 @@ def getMaterial(bs,materialID,materialSegments,textureSegments,texList,matList):
   if textureID != 0:
     for texture, value in textureSegments.items():
       bs.seek (textureSegments[str(textureID)]['offset'])
-      textureName = bs.readString()
-      bs.seek (textureSegments[str(textureID)]['offset']+36)
+      textureName = uInitString(bs,36)
       texWidth,texHeight,texFormat,_,texBufferOffs = [bs.readUInt() for _ in range(5)]
       if texFormat == 4:
         textureData = rapi.imageDecodeRaw(bs.readBytes(texWidth*texHeight*2),texWidth,texHeight,'b5g6r5')
@@ -128,21 +131,67 @@ def getMaterial(bs,materialID,materialSegments,textureSegments,texList,matList):
     material.setBlendMode("GL_SRC_ALPHA","GL_ONE")
   matList.append(material)
   return 
+    
+def getSkeleton(bs,skeletonSegments,skinSegments,unknownSegments,jointList):
+  jointNames = []
+  jointParents = []
+  jointMatrices = []
+  for k in skeletonSegments.keys():
+    bs.seek(skeletonSegments[str(k)]['offset']+256)#skipping first segment name string, these have two (???)
+    skeletonName = uInitString(bs,256)
+    jointSegmentID,skinSegmentID,_,unknownAnimPropertiesOffset = [bs.readUInt() for _ in range(4)]#check on that third value later
+    bs.seek(skeletonSegments[str(k)]['offset']+unknownAnimPropertiesOffset)
+    #animation & skin pose?
+    skinPoseProperties = uInitString(bs,80)
+    skinPoseSegmentID,_ = [bs.readUInt() for _ in range(2)]
+    skinPoseSegmentName = bs.readString()
+  
+  for k in unknownSegments.keys():#Find jointSegment
+    if k == str(jointSegmentID):
+      bs.seek(unknownSegments[str(k)]['offset']) #no name string here, if only the other segments were as nice...
+      jointCount,jointOffset = [bs.readUInt() for _ in range(2)]
+      bs.seek(unknownSegments[str(k)]['offset']+jointOffset)
+      for joint in range (jointCount):
+        jointNames.append(uInitString(bs,40))
+        jointMagic,_,_,_,_,_ = [bs.readUInt() for _ in range(6)]
+        _,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_ =[bs.readUInt() for _ in range(16)]
+        jointParents.append(bs.readUInt())
+        
+  for k in skinSegments.keys():
+    if k == str(skinSegmentID):
+      bs.seek(skinSegments[str(k)]['offset'])
+      skinSegmentName = uInitString(bs,(256*3))
+      _ = (NoeMat44.fromBytes(bs.readBytes(0x40)).toMat43().inverse()) # extra matrix (???)
+      matrixCount,matrixOffset = [bs.readUInt() for _ in range(2)]
+      bs.seek(skinSegments[str(k)]['offset']+matrixOffset)
+      for _ in range(matrixCount):
+        jointMatrices.append(NoeMat44.fromBytes(bs.readBytes(0x40)).toMat43().inverse())
+        
+  for i, (parent,name,mat) in enumerate(zip(jointParents,jointNames,jointMatrices)):
+    joint = NoeBone(i,name,mat,None,parent)
+    jointList.append(joint)
+  
+  return jointList
 
 def getMesh(bs,n3dSegmentDict,mdlList):
   texList = []
   matList = []
+  jointList = []
   meshSegments = fetchSegmentsOfType(n3dSegmentDict,'MESH')
-  for meshID,value in meshSegments.items():
+  for meshID in meshSegments.keys():
     bs.seek (meshSegments[meshID]['offset'])
-    meshSegmentName = bs.readString()
+    meshSegmentName = uInitString(bs,256)
     rapi.rpgSetName(meshSegmentName)
-    bs.seek (meshSegments[meshID]['offset']+256)
     _,_,_,_,_,_,_ = [bs.readFloat() for _ in range(7)]
     meshType,submeshCount,vertexCount,indexCount,submeshOffset,indexOffset = [bs.readUInt() for _ in range(6)]
     vertexOffset,_,_,_,_,actorInfoOffset = [bs.readUInt() for _ in range(6)]
     if meshType == 33881:
       dataStride = 0x28
+      skeletonSegments = fetchSegmentsOfType(n3dSegmentDict,'SKELETON')
+      if skeletonSegments != {}:
+        skinSegments = fetchSegmentsOfType(n3dSegmentDict,'SKIN')
+        unknownSegments = fetchSegmentsOfType(n3dSegmentDict,'UNKNOWN')
+        getSkeleton(bs,skeletonSegments,skinSegments,unknownSegments,jointList)
       print("Loaded actor mesh: " + meshSegmentName)
     elif meshType == 32857:
       dataStride = 0x24
@@ -191,6 +240,7 @@ def getMesh(bs,n3dSegmentDict,mdlList):
     mdl = rapi.rpgConstructModel()
   except:
     mdl = NoeModel()
+  mdl.setBones(jointList)
   mdl.setModelMaterials(NoeModelMaterials(texList, matList))
   mdlList.append(mdl)
   return mdlList
