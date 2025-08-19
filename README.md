@@ -1,23 +1,41 @@
 # Nicalis3D-Noesis-Importer
-A Noesis script for importing CS3D models (.n3dhdr + .n3ddta)
+A WIP Noesis script for importing Cave Story 3D model files.
+
+`.n3dhdr + .n3ddta`
 # Roadmap
-- Rewrite script to load all segments by ID
-- Implement material/texture flags
-- Implement Prop BoundingBoxes
-- Implement Prop Animation Nodes
-- Implement external actor animation files in .../anim/ folder
-# Reverse Engineering
-WIP ImHex patterns for n3ddta segments in research folder
-# Tools used
+- [x] Rewrite script to load all segments by ID
+- [ ] Implement material & texture flags
+- [ ] Implement bounding boxes
+- [ ] Implement animations
+- [ ] Implement scene objects
+
+## Screenshots
+<img width="1920" height="985" alt="Noesis_yUCRjCNDcF" src="https://github.com/user-attachments/assets/1517c0ec-e6a4-41a4-8a5a-d1650d1a287b" />
+<img width="1920" height="985" alt="Noesis_gmwfDiR9Wc" src="https://github.com/user-attachments/assets/2692f743-c557-4ea5-95f5-5e96ecb3c0d0" />
+<img width="1920" height="985" alt="Noesis_GGTT7zfDdO" src="https://github.com/user-attachments/assets/d55b29e9-8ece-4528-a23b-7ed45c7aee01" />
+<img width="1920" height="985" alt="Noesis_lFEZtlWzCq" src="https://github.com/user-attachments/assets/142d5222-86b2-4811-83ca-2b52af0c9c95" />
+<img width="1920" height="985" alt="Noesis_zOsdyVDIym" src="https://github.com/user-attachments/assets/e5932fcd-020b-4875-972d-f043e40fc110" />
+
+
+
+## Reverse Engineering
+WIP ImHex patterns for segments of the file spec [can be found here](https://github.com/Daedliy/cs3d_noesis/tree/main/research)
+## Tools used
 - Noesis
 - ImHex
+- Azahar
 - VSCode
 - Cheat Engine 
 - AXE
-# Many Thanks To:
-- Joschka (@s0me0neelse.)
-Wrote the very first script and has been an immense help answering all of my Noesis / reverse engineering questions.
-- Annie (@annie.bot)
-Iterated on the first script and is the reason this even exists at all.
-- The XeNTaX Discord Community
-Motivating me to put the work in myself for being a welcoming bunch of nerds also willing to help me understand what i was looking at.
+## Many Thanks To:
+>> ``Joschka (@s0me0neelse.)``
+>
+> Wrote the first version of this script and has been an immense help answering all of my Noesis & reverse engineering questions.
+
+>> ``Annie (@annie.bot)``
+>
+> Iterated on that first version of the script and is the reason this even exists at all.
+
+>> ``The XeNTaX Discord Community & Rich Whitehouse``
+>
+> Motivating me to put the work in myself and for providing the resources for learning Noesis.
