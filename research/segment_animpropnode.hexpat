@@ -1,4 +1,4 @@
-//Animation Node Segment
+//Animation Prop Node Segment
 
 enum transform_magic : u32{
     Move = 12,
@@ -38,4 +38,4 @@ struct animNodeSegment{
     animsubsegment animSubsegment[subsegmentcount]@ off2subsegmentoffs;
 }[[name(segmentName)]];
 
-animNodeSegment AnimationNode@0x0;
+animNodeSegment AnimationPropNode@0x0;

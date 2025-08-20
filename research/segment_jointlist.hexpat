@@ -13,4 +13,4 @@ struct jointlistinfo{
     u32 jointoffset;
     jointdata jointdata[jointcount]@jointoffset;
 };
-jointinfo jointListSegment @ 0x00;
+jointlistinfo jointListSegment @ 0x00;

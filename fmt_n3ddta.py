@@ -34,7 +34,7 @@ def getLevelDescriptor(n3dSegment,bs):
   bs.seek(n3dSegment['2186838753']['offset']+256)
   move_x1,move_y1,move_z1,move_x2,move_y2,move_z2,shadingtemp,shadingweight,_,_, = [bs.readFloat() for _ in range(10)]
   #Second entry in segmentTypes may just be extra space for propnodes (???)
-  segmentTypes = ['PROPNODE','PROPNODE','LIGHT','TYPE4','ANIMNODE','TEXTURE','MATERIAL','MESH','TYPE9','SKIN','SKELETON']
+  segmentTypes = ['PROPNODE','PROPNODE','LIGHT','TYPE4','ANIMPROPNODE','TEXTURE','MATERIAL','MESH','TYPE9','SKIN','ACTORNODE']
   for i in range (0,11):
     bitstreamoffset = 4*i
     bs.seek(n3dSegment['2186838753']['offset']+296+bitstreamoffset)
@@ -42,13 +42,14 @@ def getLevelDescriptor(n3dSegment,bs):
     bs.seek(n3dSegment['2186838753']['offset']+296+bitstreamoffset+44)
     typeOffset = bs.readUInt()
     bs.seek(n3dSegment['2186838753']['offset']+typeOffset)
-    for x in range (0,typeCount):
+    for x in range (typeCount):
       currentType = segmentTypes[i]
       id = bs.readUInt()
       if n3dSegment.get(str(id)) != None:
         n3dSegment[str(id)].update({'type':str(currentType)})
       else:
         n3dSegment[str(id)] = {'name':'missingsegment','offset':0,'size':0,'type':'MISSING'}
+  n3dSegment.pop('2186838753') # No need for the level-descriptor anymore, discard it.
   return
     
 def listN3DSegments(bs,bs2):
@@ -132,19 +133,26 @@ def getMaterial(bs,materialID,materialSegments,textureSegments,texList,matList):
   matList.append(material)
   return 
     
-def getSkeleton(bs,skeletonSegments,skinSegments,unknownSegments,jointList):
+def getSkeleton(bs,actorNodeSegments,skinSegments,unknownSegments,jointList):
   jointNames = []
   jointParents = []
   jointMatrices = []
-  for k in skeletonSegments.keys():
-    bs.seek(skeletonSegments[str(k)]['offset']+256)#skipping first segment name string, these have two (???)
+  animList = {}
+  for k in actorNodeSegments.keys():#check actor node to fetch skeleton & animation info TODO: make this for loop into a separate function??
+    bs.seek(actorNodeSegments[str(k)]['offset']+256)#skipping first segment name string
     skeletonName = uInitString(bs,256)
-    jointSegmentID,skinSegmentID,_,unknownAnimPropertiesOffset = [bs.readUInt() for _ in range(4)]#check on that third value later
-    bs.seek(skeletonSegments[str(k)]['offset']+unknownAnimPropertiesOffset)
-    #animation & skin pose?
-    skinPoseProperties = uInitString(bs,80)
-    skinPoseSegmentID,_ = [bs.readUInt() for _ in range(2)]
-    skinPoseSegmentName = bs.readString()
+    jointSegmentID,skinSegmentID,_,animSubsectionOffset = [bs.readUInt() for _ in range(4)]#check on that third value later
+    bs.seek(actorNodeSegments[str(k)]['offset']+animSubsectionOffset)
+    animSubsectionName = uInitString(bs,64)
+    animSubsectionSize,animCount,animIDOffset,animNamePointerOffset = [bs.readUInt() for _ in range(4)]
+    for i in range (animCount):
+      bitstreamoffset = 4*i
+      bs.seek(actorNodeSegments[str(k)]['offset']+animSubsectionOffset+animIDOffset+bitstreamoffset)
+      animID = bs.readUInt()
+      bs.seek(actorNodeSegments[str(k)]['offset']+animSubsectionOffset+animNamePointerOffset+bitstreamoffset)
+      animNamePointer = bs.readUInt()
+      bs.seek(actorNodeSegments[str(k)]['offset']+animSubsectionOffset+animNamePointer+bitstreamoffset)
+      animName = bs.readString()
   
   for k in unknownSegments.keys():#Find jointSegment
     if k == str(jointSegmentID):
@@ -154,20 +162,22 @@ def getSkeleton(bs,skeletonSegments,skinSegments,unknownSegments,jointList):
       for joint in range (jointCount):
         jointNames.append(uInitString(bs,40))
         jointMagic,_,_,_,_,_ = [bs.readUInt() for _ in range(6)]
-        _,_,_,_,_,_,_,_,_,_,_,_,_,_,_,_ =[bs.readUInt() for _ in range(16)]
+        jointMatrix = (NoeMat44.fromBytes(bs.readBytes(0x40)).toMat43().inverse()) #unsure what to do with this when skin matrix works fine
         jointParents.append(bs.readUInt())
         
   for k in skinSegments.keys():
     if k == str(skinSegmentID):
       bs.seek(skinSegments[str(k)]['offset'])
       skinSegmentName = uInitString(bs,(256*3))
-      _ = (NoeMat44.fromBytes(bs.readBytes(0x40)).toMat43().inverse()) # extra matrix (???)
+      skinSegmentMatrix = NoeMat44.fromBytes(bs.readBytes(0x40)).toMat43() #transforms mesh before applying skel
+      rapi.rpgSetTransform(skinSegmentMatrix)
+
       matrixCount,matrixOffset = [bs.readUInt() for _ in range(2)]
       bs.seek(skinSegments[str(k)]['offset']+matrixOffset)
       for _ in range(matrixCount):
         jointMatrices.append(NoeMat44.fromBytes(bs.readBytes(0x40)).toMat43().inverse())
         
-  for i, (parent,name,mat) in enumerate(zip(jointParents,jointNames,jointMatrices)):
+  for i, (parent,name,mat) in enumerate(zip(jointParents,jointNames,jointMatrices)): #construct skeleton
     joint = NoeBone(i,name,mat,None,parent)
     jointList.append(joint)
   
@@ -187,11 +197,11 @@ def getMesh(bs,n3dSegmentDict,mdlList):
     vertexOffset,_,_,_,_,actorInfoOffset = [bs.readUInt() for _ in range(6)]
     if meshType == 33881:
       dataStride = 0x28
-      skeletonSegments = fetchSegmentsOfType(n3dSegmentDict,'SKELETON')
-      if skeletonSegments != {}:
+      actorNodeSegments = fetchSegmentsOfType(n3dSegmentDict,'ACTORNODE')
+      if actorNodeSegments != {}:
         skinSegments = fetchSegmentsOfType(n3dSegmentDict,'SKIN')
         unknownSegments = fetchSegmentsOfType(n3dSegmentDict,'UNKNOWN')
-        getSkeleton(bs,skeletonSegments,skinSegments,unknownSegments,jointList)
+        getSkeleton(bs,actorNodeSegments,skinSegments,unknownSegments,jointList)
       print("Loaded actor mesh: " + meshSegmentName)
     elif meshType == 32857:
       dataStride = 0x24
@@ -254,18 +264,24 @@ def n3dLoadModel(data, mdlList):
   if rapi.checkFileExists(headerFileName) !=0:
     data2 = rapi.loadIntoByteArray(headerFileName)
     bs2 = NoeBitStream(data2)
-  modelName = bs2.readString()
-  
+    modelName = bs2.readString()
+    print("Found model header file: "+ headerFileName)
+    print("Found model data file: "+ rapi.getInputName())
+    print("Model file name: " + modelName)
+
+  n3dSegmentDict = listN3DSegments(bs,bs2)#Fetch segment info and return a dict
+
   #Load External Animations
   animDataFileName = rapi.getDirForFilePath(rapi.getInputName()) + "anim\\anim" + modelName[3:] + ".n3ddta"
   animHeaderFileName = rapi.getDirForFilePath(rapi.getInputName()) + "anim\\anim" + modelName[3:] + ".n3dhdr"
   if rapi.checkFileExists(animDataFileName) !=0 and rapi.checkFileExists(animHeaderFileName) !=0:
     data3,data4 = rapi.loadIntoByteArray(animDataFileName),rapi.loadIntoByteArray(animHeaderFileName)
     bs3,bs4 = NoeBitStream(data3),NoeBitStream(data4)
+    animFileName = bs4.readString()
     print("Found animation data file: "+ animDataFileName)
     print("Found animation header file: "+ animHeaderFileName)
-    animFileName = bs4.readString()
     print("Animation file name: " + animFileName)
+    animN3DSegmentDict = listN3DSegments(bs3,bs4)
 
   #Load External Material Animation 
   matAnimFileName = rapi.getExtensionlessName(rapi.getInputName()) + ".mat" 
@@ -281,7 +297,6 @@ def n3dLoadModel(data, mdlList):
     bs6 = NoeBitStream(data6)
     print("Found camera file: "+ camFileName)
   
-  n3dSegmentDict = listN3DSegments(bs,bs2)#Fetch segment info and return a dict
   getMesh(bs,n3dSegmentDict,mdlList)
   noesis.logOutput("Model file: '"+str(modelName) +"' Loaded. "+"\n")
   
