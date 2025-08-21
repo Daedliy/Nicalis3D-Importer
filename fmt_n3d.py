@@ -8,6 +8,9 @@ def registerNoesisTypes():
   handle = noesis.register("Nicalis 3D Data",".n3ddta")
   noesis.setHandlerTypeCheck(handle, n3dCheckType)
   noesis.setHandlerLoadModel(handle, n3dLoadModel)
+  handle = noesis.register("Nicalis 3D Data",".n3dhdr")
+  noesis.setHandlerTypeCheck(handle, n3dCheckType)
+  noesis.setHandlerLoadModel(handle, n3dLoadModel)
   # noesis.addOption(handle, "option name", "option description", noesisflags (Do Later)
   return 1
 
@@ -267,18 +270,28 @@ def getMesh(bs,n3dSegmentDict,mdlList):
 
 def n3dLoadModel(data, mdlList):
   ctx = rapi.rpgCreateContext()
-  bs = NoeBitStream(data)
   
-  #Load Model File Header
-  headerFileName = rapi.getExtensionlessName(rapi.getInputName()) + ".n3dhdr" 
-  if rapi.checkFileExists(headerFileName) !=0:
-    data2 = rapi.loadIntoByteArray(headerFileName)
-    bs2 = NoeBitStream(data2)
-    modelName = bs2.readString()
-    print("Found model header file: "+ headerFileName)
-    print("Found model data file: "+ rapi.getInputName())
-    print("Model file name: " + modelName)
-    n3dSegmentDict = listN3DSegments(bs,bs2,'INTERNAL')#Fetch segment info and return a dict
+  #Load model regardless of paired file selected
+  print("Found selected file "+ rapi.getInputName())
+  if rapi.checkFileExt(rapi.getInputName(),".n3ddta") == 1:
+    bs = NoeBitStream(data)
+    headerFileName = rapi.getExtensionlessName(rapi.getInputName()) + ".n3dhdr"
+    if rapi.checkFileExists(headerFileName) !=0:
+      data2 = rapi.loadIntoByteArray(headerFileName)
+      print("Found model header file: "+ headerFileName)
+      bs2 = NoeBitStream(data2)
+    else:noesis.Noesis_DoException("Missing .n3dhdr file!")
+  else:
+    dataFileName = rapi.getExtensionlessName(rapi.getInputName()) + ".n3ddta"
+    bs2 = NoeBitStream(data)
+    if rapi.checkFileExists(dataFileName) !=0:
+      data2 = rapi.loadIntoByteArray(dataFileName)
+      print("Found model data file: "+ dataFileName)
+      bs = NoeBitStream(data2)
+    else:noesis.Noesis_DoException("Missing .n3ddta file!")
+  modelName = bs2.readString()
+  print("Loading model: " + modelName)
+  n3dSegmentDict = listN3DSegments(bs,bs2,'INTERNAL')#Fetch segment info and return a dict
 
   #Load External Animations
   animDataFileName = rapi.getDirForFilePath(rapi.getInputName()) + "anim\\anim" + modelName[3:] + ".n3ddta"
