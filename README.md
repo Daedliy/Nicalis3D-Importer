@@ -1,5 +1,5 @@
 # Nicalis3D-Importer
-With this WIP plugin, you can veiw and export Cave Story 3D `.n3d___` model files with [Noesis](https://richwhitehouse.com/index.php?content=inc_projects.php&showproject=91)
+With this WIP plugin, you can view and export Cave Story 3D `.n3d___` model files with [Noesis](https://richwhitehouse.com/index.php?content=inc_projects.php&showproject=91)
 
 <details>
 <summary>Screenshots</summary>
@@ -12,7 +12,8 @@ With this WIP plugin, you can veiw and export Cave Story 3D `.n3d___` model file
 
 ### Getting Started
 - Download Noesis and place `fmt_n3d.py` in `\noesis___\plugins\python\`
-- Dump romfs from your copy of Cave Story 3D with your emulator of choice, model files are stored in `romfs\______________\data\stage3d`
+- Dump romfs from your copy of Cave Story 3D with your 3DS emulator of choice
+- Navigate to `\romfs\______________\data\stage3d\` and open any of the files with Noesis
 
 
 ### Reverse Engineering

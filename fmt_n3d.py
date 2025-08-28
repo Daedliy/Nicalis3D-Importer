@@ -20,11 +20,11 @@ def n3dCheckType(data):
     return 0
   return 1
 
-def uInitString(bs,bufferSize): #Moves data pointer and returns string
-  readString = bs.readString()
+def uInitString(bitstream,bufferSize): #Moves data pointer and returns string
+  readString = bitstream.readString()
   stringLength = (len(readString))
   if (stringLength):
-    bs.seek(bufferSize - stringLength -1, 1)
+    bitstream.seek(bufferSize - stringLength -1, 1)
     return readString
   
 def fetchSegmentsOfType(n3dSegmentDict,TYPE):#create smaller dict of desired type
@@ -46,7 +46,7 @@ def getLevelDescriptor(n3dSegment,bs):
   move_x1,move_y1,move_z1,move_x2,move_y2,move_z2,shadingtemp,shadingweight,_,_, = [bs.readFloat() for _ in range(10)]
   #Second entry in segmentTypes may just be extra space for propnodes (???)
   segmentTypes = ['PROPNODE','PROPNODE','LIGHT','TYPE4','ANIMPROPNODE','TEXTURE','MATERIAL','MESH','TYPE9','SKIN','ACTORNODE']
-  for i in range (0,11):
+  for i in range (11):
     bitstreamoffset = 4*i
     bs.seek(n3dSegment['2186838753']['offset']+296+bitstreamoffset)
     typeCount = bs.readUInt()
@@ -166,8 +166,7 @@ def getSkeleton(bs,actorNodeSegments,skinSegments,jointListSegments,jointList):
   jointNames = []
   jointParents = []
   jointMatrices = []
-  animList = {}
-  for k in jointListSegments.keys():#TODO change logic to find via type
+  for k in jointListSegments.keys():
     if jointListSegments[str(k)]['origin'] == 'INTERNAL':
       bs.seek(jointListSegments[str(k)]['offset']) #no name string here, if only the other segments were as nice...
       jointCount,jointOffset = [bs.readUInt() for _ in range(2)]
@@ -195,11 +194,84 @@ def getSkeleton(bs,actorNodeSegments,skinSegments,jointListSegments,jointList):
     jointList.append(joint)
   
   return jointList
+def getSkeletonAnimation(bs,bs3,jointList,actorAnimSegments,animList):#probably just redo this whole mess
+  for anim in actorAnimSegments.keys():
+    if actorAnimSegments[anim]['origin'] == 'EXTERNAL': #INTERNAL is always reference animation (skin-pose)
+      framerate = 30
+      keyframedBoneList = []
 
-def getMesh(bs,n3dSegmentDict,mdlList):
+      bs3.seek (actorAnimSegments[anim]['offset'])
+      animationName = uInitString(bs3,256)
+      animLengthMin,animLengthMax = [bs3.readFloat() for _ in range(2)]
+      animMatrix = NoeMat44.fromBytes(bs3.readBytes(0x40)).toMat43()
+      animID,animTransCount,animBoneCount,offset2AnimTransOffset = [bs3.readUInt() for _ in range(4)]
+      print("Animation: ",animationName,"Start:",animLengthMin,"End:",animLengthMax)
+      previousTransformValue = 0
+      transformcounter = 0
+      
+      for k in range (animTransCount):#all transforms, not all bones come with all 3
+        posKF = []
+        rotKF = []
+        sclKF = []
+        incrementk = 4*k
+        bs3.seek (actorAnimSegments[anim]['offset']+offset2AnimTransOffset+incrementk)
+        animTransOffset = bs3.readUInt()
+        bs3.seek (actorAnimSegments[anim]['offset']+animTransOffset)
+        animBoneName = uInitString(bs3,256)
+        transformLengthMin,transformLengthMax = [bs3.readFloat() for _ in range(2)]
+        transformValue,animTransformMagic,vec3Offset = [bs3.readUInt() for _ in range(3)]
+        animTransformSize = animTransformMagic - 18087936
+        
+        #Find out which transform by using transformValue
+        if k == 0 or transformValue - previousTransformValue == 64000 or transformValue - previousTransformValue == 64768:
+          transformcounter = 1
+        elif transformValue - previousTransformValue == 768:
+          transformcounter = transformcounter + 1
+
+        #print("Keyfamed Bone:",animBoneName,"Start:",transformLengthMin,"End:",transformLengthMax)
+        
+        for i in range (animTransformSize):
+          incrementi = i*4
+          bs3.seek (actorAnimSegments[anim]['offset']+animTransOffset + 276 + incrementi)
+          animTimeStamp = bs3.readFloat()
+          bs3.seek (actorAnimSegments[anim]['offset']+animTransOffset + vec3Offset + incrementi*3)
+          x,y,z = [bs3.readFloat() for _ in range(3)]
+              
+          if transformcounter == 1:
+            posKF.append(NoeKeyFramedValue(animTimeStamp, NoeVec3([x,y,z])))
+            #print("Move @",animTimeStamp,x,y,z)  
+          elif transformcounter == 2:
+            rotKF.append(NoeKeyFramedValue(animTimeStamp, NoeAngles([x,y,z]).toDegrees()))
+            #print("Rotate @",animTimeStamp,x,y,z)
+          elif transformcounter == 3:
+            sclKF.append(NoeKeyFramedValue(animTimeStamp, NoeVec3([x,y,z])))
+            #print("Scale @",animTimeStamp,x,y,z)
+            
+        for j in jointList:
+          if animBoneName in str(j):
+            animBone = NoeKeyFramedBone(jointList.index(j))
+        if transformValue - previousTransformValue >= 768:
+          #print(j,"index",jointList.index(j))
+          animBone.setTranslation(posKF,noesis.NOEKF_TRANSLATION_VECTOR_3)
+          animBone.setRotation(rotKF, noesis.NOEKF_ROTATION_EULER_XYZ_3)
+          animBone.setScale(sclKF,noesis.NOEKF_SCALE_VECTOR_3)
+          keyframedBoneList.append(animBone)
+
+        previousTransformValue = transformValue
+        if posKF != []:
+          print("Position keyframes:",posKF)
+        if rotKF != []:
+          print("Rotation keyframes:",rotKF)
+        if sclKF != []:
+          print("Scale keyframes:",sclKF)
+      anim = NoeKeyFramedAnim(animationName, jointList, keyframedBoneList, framerate)#repeat per frame of anim
+      animList.append(anim)# only repeat when anim is done
+  
+def getMesh(bs,bs3,n3dSegmentDict,mdlList):
   texList = []
   matList = []
   jointList = []
+  animList = []
   meshSegments = fetchSegmentsOfType(n3dSegmentDict,'MESH')
   for meshID in meshSegments.keys():
     bs.seek (meshSegments[meshID]['offset'])
@@ -212,9 +284,12 @@ def getMesh(bs,n3dSegmentDict,mdlList):
       dataStride = 0x28
       actorNodeSegments = fetchSegmentsOfType(n3dSegmentDict,'ACTORNODE')
       if actorNodeSegments != {}:
+        rapi.processCommands("-rotate 90 0 0")
         skinSegments = fetchSegmentsOfType(n3dSegmentDict,'SKIN')
         jointListSegments = fetchSegmentsOfType(n3dSegmentDict,'JOINTLIST')
         getSkeleton(bs,actorNodeSegments,skinSegments,jointListSegments,jointList)
+        actorAnimSegments = fetchSegmentsOfType(n3dSegmentDict,'ACTORANIM')
+        getSkeletonAnimation(bs,bs3,jointList,actorAnimSegments,animList)
       print("Loaded actor mesh: " + meshSegmentName)
     elif meshType == 32857:
       dataStride = 0x24
@@ -258,19 +333,20 @@ def getMesh(bs,n3dSegmentDict,mdlList):
       bs.seek (meshSegments[meshID]['offset']+ indexOffset+submeshFaceOffset*2)
       indexBuffer = bs.readBytes(submeshFaceCount*2)
       rapi.rpgCommitTriangles(indexBuffer,noesis.RPGEODATA_USHORT, submeshFaceCount,noesis.RPGEO_TRIANGLE)
-      
+  
   try:
     mdl = rapi.rpgConstructModel()
   except:
     mdl = NoeModel()
   mdl.setBones(jointList)
   mdl.setModelMaterials(NoeModelMaterials(texList, matList))
+  mdl.setAnims(animList)
   mdlList.append(mdl)
   return mdlList
 
 def n3dLoadModel(data, mdlList):
   ctx = rapi.rpgCreateContext()
-  
+  bs3,bs4,bs5,bs6 = None,None,None,None
   #Load model regardless of paired file selected
   print("Found selected file "+ rapi.getInputName())
   if rapi.checkFileExt(rapi.getInputName(),".n3ddta") == 1:
@@ -320,7 +396,7 @@ def n3dLoadModel(data, mdlList):
     bs6 = NoeBitStream(data6)
     print("Found camera file: "+ camFileName)
   
-  getMesh(bs,n3dSegmentDict,mdlList)
+  getMesh(bs,bs3,n3dSegmentDict,mdlList)
   noesis.logOutput("Model file: '"+str(modelName) +"' Loaded. "+"\n")
   
   return 1
