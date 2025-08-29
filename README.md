@@ -24,6 +24,9 @@ ImHex patterns for segments of the file spec and notes [can be found here](https
 - [ ] Implement material & texture flags
 - [ ] Implement bounding boxes
 - [ ] Implement animations
+  - [x] Actor Animations `\anim\_.n3d__`
+  - [ ] Prop Animations `prop animation segment`
+  - [ ] Animated Textures `.mat`
 - [ ] Implement scene objects
 
 ### Tools used
