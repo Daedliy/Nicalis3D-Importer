@@ -227,9 +227,14 @@ def getSkeletonAnimation(bs,bs3,jointList,actorAnimSegments,animList):#probably 
           transformcounter = 1
         elif transformValue - previousTransformValue == 768:
           transformcounter = transformcounter + 1
+        elif transformValue - previousTransformValue == 768*2:
+          transformcounter = transformcounter + 2
 
         #print("Keyfamed Bone:",animBoneName,"Start:",transformLengthMin,"End:",transformLengthMax)
-        
+        for j in jointList:
+          if animBoneName in str(j):
+            animBone = NoeKeyFramedBone(jointList.index(j))
+            #animBone.flags = noesis.NOEKF_INTERPOLATE_LINEAR
         for i in range (animTransformSize):
           incrementi = i*4
           bs3.seek (actorAnimSegments[anim]['offset']+animTransOffset + 276 + incrementi)
@@ -247,10 +252,8 @@ def getSkeletonAnimation(bs,bs3,jointList,actorAnimSegments,animList):#probably 
             sclKF.append(NoeKeyFramedValue(animTimeStamp, NoeVec3([x,y,z])))
             #print("Scale @",animTimeStamp,x,y,z)
             
-        for j in jointList:
-          if animBoneName in str(j):
-            animBone = NoeKeyFramedBone(jointList.index(j))
-        if transformValue - previousTransformValue >= 768:
+
+        if transformValue - previousTransformValue <= 768*2:
           #print(j,"index",jointList.index(j))
           animBone.setTranslation(posKF,noesis.NOEKF_TRANSLATION_VECTOR_3)
           animBone.setRotation(rotKF, noesis.NOEKF_ROTATION_EULER_XYZ_3)
