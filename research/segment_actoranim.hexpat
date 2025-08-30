@@ -9,10 +9,10 @@ struct matrix44{
 }[[single_color]];
 
 fn format_vec(ref auto vec) {
-    return std::format("Vec({}, {}, {})", vec.x, vec.y, vec.z);
+    return std::format("Vec({}, {}, {})", vec.x, vec.z, vec.y);
 };
 struct vec3{
-float x,y,z;//facing model, right is X+, backwards is Z+, up is Y+
+float x,z,y;//facing model, right is X+, backwards is Z+, up is Y+
 }[[static, sealed, format("format_vec")]];
 
 struct keyframes{ //i dont know
@@ -21,10 +21,10 @@ struct keyframes{ //i dont know
 };
 
 struct animtransform{
-    char bonename[256];
+    char currentbone[256];
     float tranformlengthstart;
     float tranformlengthend;
-    u32 transformvalue;//+768 next transform, +64000 next bone, if anything is skipped added anyways
+    u32 transformunknown3;//increments as animation goes on
     u32 transformmagic;
     u32 transformsize = transformmagic - 18087936; //accounts for any size
     u32 vec3pointer;
@@ -42,7 +42,7 @@ struct animation{
     matrix44 unknownmatrix;
     u32 selfid;
     u32 animtransformcount;
-    u32 bonecount;
+    u32 boneindex;
     u32 pointerarrayoffset;
     animtranspointer animtransforms [animtransformcount]@ pointerarrayoffset;
 

@@ -202,14 +202,14 @@ def getSkeletonAnimation(bs,bs3,jointList,actorAnimSegments,animList):#probably 
 
       bs3.seek (actorAnimSegments[anim]['offset'])
       animationName = uInitString(bs3,256)
-      animLengthMin,animLengthMax = [bs3.readFloat() for _ in range(2)]
+      animLengthMin,animLengthMax = [bs3.readFloat() for _ in range(2)] #TODO, investigate on balrog_warp
       animMatrix = NoeMat44.fromBytes(bs3.readBytes(0x40)).toMat43()
       animID,animTransCount,animBoneCount,offset2AnimTransOffset = [bs3.readUInt() for _ in range(4)]
       print("Animation: ",animationName,"Start:",animLengthMin,"End:",animLengthMax)
-      previousTransformValue = 0
-      transformcounter = 0
       
       for k in range (animTransCount):#all transforms, not all bones come with all 3
+        currentTransform = 1 # 1:Move, 2:Rotate, 3:Scale
+        currentBoneIndex = 0
         posKF = []
         rotKF = []
         sclKF = []
@@ -217,24 +217,29 @@ def getSkeletonAnimation(bs,bs3,jointList,actorAnimSegments,animList):#probably 
         bs3.seek (actorAnimSegments[anim]['offset']+offset2AnimTransOffset+incrementk)
         animTransOffset = bs3.readUInt()
         bs3.seek (actorAnimSegments[anim]['offset']+animTransOffset)
-        animBoneName = uInitString(bs3,256)
-        transformLengthMin,transformLengthMax = [bs3.readFloat() for _ in range(2)]
+        currentBoneName = uInitString(bs3,256)
+        transformLengthMin,transformLengthMax = [bs3.readFloat() for _ in range(2)] #TODO, investigate on balrog_warp
         transformValue,animTransformMagic,vec3Offset = [bs3.readUInt() for _ in range(3)]
         animTransformSize = animTransformMagic - 18087936
         
         #Find out which transform by using transformValue
-        if k == 0 or transformValue - previousTransformValue == 64000 or transformValue - previousTransformValue == 64768:
-          transformcounter = 1
-        elif transformValue - previousTransformValue == 768:
-          transformcounter = transformcounter + 1
-        elif transformValue - previousTransformValue == 768*2:
-          transformcounter = transformcounter + 2
+        while transformValue != 12:
+          currentTransform += 1 #Rotation Transform
+          transformValue -= 768 
+          if transformValue == 12: break
+          currentTransform += 1 #Scale Transform
+          transformValue -= 768 
+          if transformValue == 12: break
+          currentTransform -= 2
+          currentBoneIndex += 1 # Next Bone
+          transformValue -= 64000
+          if transformValue == 12: break
+          if transformValue <= 0: noesis.doException("Corrupt or bad keyframe track!")
 
-        #print("Keyfamed Bone:",animBoneName,"Start:",transformLengthMin,"End:",transformLengthMax)
-        for j in jointList:
-          if animBoneName in str(j):
-            animBone = NoeKeyFramedBone(jointList.index(j))
-            #animBone.flags = noesis.NOEKF_INTERPOLATE_LINEAR
+        print("Keyfamed Bone:",currentBoneName,"Start:",transformLengthMin,"End:",transformLengthMax)
+
+        animBone = NoeKeyFramedBone(currentBoneIndex)
+        animBone.flags = noesis.NOEKF_INTERPOLATE_LINEAR
         for i in range (animTransformSize):
           incrementi = i*4
           bs3.seek (actorAnimSegments[anim]['offset']+animTransOffset + 276 + incrementi)
@@ -242,32 +247,28 @@ def getSkeletonAnimation(bs,bs3,jointList,actorAnimSegments,animList):#probably 
           bs3.seek (actorAnimSegments[anim]['offset']+animTransOffset + vec3Offset + incrementi*3)
           x,y,z = [bs3.readFloat() for _ in range(3)]
               
-          if transformcounter == 1:
+          if currentTransform == 1:
             posKF.append(NoeKeyFramedValue(animTimeStamp, NoeVec3([x,y,z])))
-            #print("Move @",animTimeStamp,x,y,z)  
-          elif transformcounter == 2:
+            print("Move @",animTimeStamp,x,y,z)  
+          elif currentTransform == 2:
             rotKF.append(NoeKeyFramedValue(animTimeStamp, NoeAngles([x,y,z]).toDegrees()))
-            #print("Rotate @",animTimeStamp,x,y,z)
-          elif transformcounter == 3:
+            print("Rotate @",animTimeStamp,x,y,z)
+          elif currentTransform == 3:
             sclKF.append(NoeKeyFramedValue(animTimeStamp, NoeVec3([x,y,z])))
-            #print("Scale @",animTimeStamp,x,y,z)
+            print("Scale @",animTimeStamp,x,y,z)
             
-
-        if transformValue - previousTransformValue <= 768*2:
-          #print(j,"index",jointList.index(j))
-          animBone.setTranslation(posKF,noesis.NOEKF_TRANSLATION_VECTOR_3)
-          animBone.setRotation(rotKF, noesis.NOEKF_ROTATION_EULER_XYZ_3)
-          animBone.setScale(sclKF,noesis.NOEKF_SCALE_VECTOR_3)
-          keyframedBoneList.append(animBone)
-
-        previousTransformValue = transformValue
+        print(currentBoneName,"index",currentBoneIndex)
         if posKF != []:
+          animBone.setTranslation(posKF,noesis.NOEKF_TRANSLATION_VECTOR_3)
           print("Position keyframes:",posKF)
         if rotKF != []:
+          animBone.setRotation(rotKF, noesis.NOEKF_ROTATION_EULER_XYZ_3)
           print("Rotation keyframes:",rotKF)
         if sclKF != []:
+          animBone.setScale(sclKF,noesis.NOEKF_SCALE_VECTOR_3)
           print("Scale keyframes:",sclKF)
-      anim = NoeKeyFramedAnim(animationName, jointList, keyframedBoneList, framerate)#repeat per frame of anim
+        keyframedBoneList.append(animBone)
+      anim = NoeKeyFramedAnim(animationName, jointList, keyframedBoneList, framerate)
       animList.append(anim)# only repeat when anim is done
   
 def getMesh(bs,bs3,n3dSegmentDict,mdlList):
