@@ -13,6 +13,8 @@ struct skininfo{
     u32 matrixcount;
     u32 matrixoffset;
     matrix44 jointmatrix[matrixcount]@ matrixoffset;
+    u32 unknown1;//likely some ID?
+    u32 unknown2;//likely some ID?
 };
 
 skininfo SkinSegment @ 0x00;

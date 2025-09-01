@@ -184,7 +184,7 @@ def getSkeleton(bs,actorNodeSegments,skinSegments,jointListSegments,jointList):
       skinSegmentMatrix = NoeMat44.fromBytes(bs.readBytes(0x40)).toMat43() #transforms mesh before applying skel
       rapi.rpgSetTransform(skinSegmentMatrix)
 
-      matrixCount,matrixOffset = [bs.readUInt() for _ in range(2)]
+      matrixCount,matrixOffset,unk1,unk2 = [bs.readUInt() for _ in range(4)]#unk1 & unk2 may be some range (min/max) or IDs
       bs.seek(skinSegments[str(k)]['offset']+matrixOffset)
       for _ in range(matrixCount):
         jointMatrices.append(NoeMat44.fromBytes(bs.readBytes(0x40)).toMat43().inverse())
@@ -194,17 +194,20 @@ def getSkeleton(bs,actorNodeSegments,skinSegments,jointListSegments,jointList):
     jointList.append(joint)
   
   return jointList
-def getSkeletonAnimation(bs,bs3,jointList,actorAnimSegments,animList):#probably just redo this whole mess
+
+def getSkeletonAnimation(bitstream,jointList,actorAnimSegments,animList,origin):
+  framerate = 30
+  #TODO: Figure where to use skin-pose when there are no keyframes
+  #TODO: Have empty keyframes to properly play animations with a delayed start and end
   for anim in actorAnimSegments.keys():
-    if actorAnimSegments[anim]['origin'] == 'EXTERNAL': #INTERNAL is always reference animation (skin-pose)
-      framerate = 30
+    if actorAnimSegments[anim]['origin'] == origin:
       keyframedBoneList = []
 
-      bs3.seek (actorAnimSegments[anim]['offset'])
-      animationName = uInitString(bs3,256)
-      animLengthMin,animLengthMax = [bs3.readFloat() for _ in range(2)] #TODO, investigate on balrog_warp
-      animMatrix = NoeMat44.fromBytes(bs3.readBytes(0x40)).toMat43()
-      animID,animTransCount,animBoneCount,offset2AnimTransOffset = [bs3.readUInt() for _ in range(4)]
+      bitstream.seek (actorAnimSegments[anim]['offset'])
+      animationName = uInitString(bitstream,256)
+      animLengthMin,animLengthMax = [bitstream.readFloat() for _ in range(2)] #TODO, investigate on balrog_teleport
+      animMatrix = NoeMat44.fromBytes(bitstream.readBytes(0x40)).toMat43()
+      animID,animTransCount,animBoneCount,offset2AnimTransOffset = [bitstream.readUInt() for _ in range(4)]
       print("Animation: ",animationName,"Start:",animLengthMin,"End:",animLengthMax)
       
       for k in range (animTransCount):#all transforms, not all bones come with all 3
@@ -214,38 +217,38 @@ def getSkeletonAnimation(bs,bs3,jointList,actorAnimSegments,animList):#probably 
         rotKF = []
         sclKF = []
         incrementk = 4*k
-        bs3.seek (actorAnimSegments[anim]['offset']+offset2AnimTransOffset+incrementk)
-        animTransOffset = bs3.readUInt()
-        bs3.seek (actorAnimSegments[anim]['offset']+animTransOffset)
-        currentBoneName = uInitString(bs3,256)
-        transformLengthMin,transformLengthMax = [bs3.readFloat() for _ in range(2)] #TODO, investigate on balrog_warp
-        transformValue,animTransformMagic,vec3Offset = [bs3.readUInt() for _ in range(3)]
+        bitstream.seek (actorAnimSegments[anim]['offset']+offset2AnimTransOffset+incrementk)
+        animTransOffset = bitstream.readUInt()
+        bitstream.seek (actorAnimSegments[anim]['offset']+animTransOffset)
+        currentBoneName = uInitString(bitstream,256)
+        transformLengthMin,transformLengthMax = [bitstream.readFloat() for _ in range(2)] #TODO, investigate on balrog_teleport
+        transformValue,animTransformMagic,vec3Offset = [bitstream.readUInt() for _ in range(3)]
         animTransformSize = animTransformMagic - 18087936
         
         #Find out which transform by using transformValue
         while transformValue != 12:
-          currentTransform += 1 #Rotation Transform
+          currentTransform += 1 #Rotation transform
           transformValue -= 768 
           if transformValue == 12: break
-          currentTransform += 1 #Scale Transform
+          currentTransform += 1 #Scale transform
           transformValue -= 768 
           if transformValue == 12: break
           currentTransform -= 2
-          currentBoneIndex += 1 # Next Bone
+          currentBoneIndex += 1 # Next bone + cycle back to move transform
           transformValue -= 64000
           if transformValue == 12: break
           if transformValue <= 0: noesis.doException("Corrupt or bad keyframe track!")
 
-        print("Keyfamed Bone:",currentBoneName,"Start:",transformLengthMin,"End:",transformLengthMax)
+        print("Keyframed Bone:",currentBoneName,"Start:",transformLengthMin,"End:",transformLengthMax)
 
         animBone = NoeKeyFramedBone(currentBoneIndex)
         animBone.flags = noesis.NOEKF_INTERPOLATE_LINEAR
         for i in range (animTransformSize):
           incrementi = i*4
-          bs3.seek (actorAnimSegments[anim]['offset']+animTransOffset + 276 + incrementi)
-          animTimeStamp = bs3.readFloat()
-          bs3.seek (actorAnimSegments[anim]['offset']+animTransOffset + vec3Offset + incrementi*3)
-          x,y,z = [bs3.readFloat() for _ in range(3)]
+          bitstream.seek (actorAnimSegments[anim]['offset']+animTransOffset + 276 + incrementi)
+          animTimeStamp = bitstream.readFloat()
+          bitstream.seek (actorAnimSegments[anim]['offset']+animTransOffset + vec3Offset + incrementi*3)
+          x,y,z = [bitstream.readFloat() for _ in range(3)]
               
           if currentTransform == 1:
             posKF.append(NoeKeyFramedValue(animTimeStamp, NoeVec3([x,y,z])))
@@ -285,15 +288,16 @@ def getMesh(bs,bs3,n3dSegmentDict,mdlList):
     meshType,submeshCount,vertexCount,indexCount,submeshOffset,indexOffset = [bs.readUInt() for _ in range(6)]
     vertexOffset,_,_,_,_,actorInfoOffset = [bs.readUInt() for _ in range(6)]
     if meshType == 33881:
+      rapi.processCommands("-rotate 90 0 0")
       dataStride = 0x28
       actorNodeSegments = fetchSegmentsOfType(n3dSegmentDict,'ACTORNODE')
       if actorNodeSegments != {}:
-        rapi.processCommands("-rotate 90 0 0")
         skinSegments = fetchSegmentsOfType(n3dSegmentDict,'SKIN')
         jointListSegments = fetchSegmentsOfType(n3dSegmentDict,'JOINTLIST')
         getSkeleton(bs,actorNodeSegments,skinSegments,jointListSegments,jointList)
         actorAnimSegments = fetchSegmentsOfType(n3dSegmentDict,'ACTORANIM')
-        getSkeletonAnimation(bs,bs3,jointList,actorAnimSegments,animList)
+        getSkeletonAnimation(bs,jointList,actorAnimSegments,animList,'INTERNAL')
+        getSkeletonAnimation(bs3,jointList,actorAnimSegments,animList,'EXTERNAL') #Loads Animations from /anim/
       print("Loaded actor mesh: " + meshSegmentName)
     elif meshType == 32857:
       dataStride = 0x24

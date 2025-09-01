@@ -33,7 +33,7 @@ struct animtransform{
 
 struct animtranspointer{//scale? //pos //rotation?
     animtransform* animtransform : u32[[inline]];
-}[[name(animtransform.bonename)]];
+}[[name(animtransform.currentbone)]];
 
 struct animation{
     char segmentname[256];
