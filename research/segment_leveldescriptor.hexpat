@@ -1,26 +1,38 @@
 //Level-Descriptor Segment
-//segment id is consistantly 2186838753
-struct leveldescriptorinfo{
-    char segmentname[256];
-    float move_x,move_y,move_z;// x+ ->right, y+ -> down, z+ -> forward
-    float move_x2,move_y2,move_z2;//duplicates of movement transform?
-    float shadingtemp;// -1 for coolest, 1 for warmest
-    float shadingweight;//-1 for heaviest shading, 1 for fullbright
-    float unknown[2]; //did not encounter any changes when modified
-    u32 idcount[11];
-    u32 idoffs[11];
-    //segments, only 11 types exist
-    u32 segmentids0  [idcount[0]] @ idoffs[0];//props, may have unknown ids
-    u32 segmentids1  [idcount[1]] @ idoffs[1];//not encountered yet
-    u32 segmentids2  [idcount[2]] @ idoffs[2];//Lights
-    u32 segmentids3  [idcount[3]] @ idoffs[3];//not encountered yet
-    u32 segmentids4  [idcount[4]] @ idoffs[4];//Prop Animations
-    u32 segmentids5  [idcount[5]] @ idoffs[5];//Textures
-    u32 segmentids6  [idcount[6]] @ idoffs[6];//Materials
-    u32 segmentids7  [idcount[7]] @ idoffs[7];//Meshes, may have unknown ids
-    u32 segmentids8  [idcount[8]] @ idoffs[8];//not encountered yet
-    u32 segmentids9  [idcount[9]] @ idoffs[9];//Actor Skins
-    u32 segmentids10 [idcount[10]] @ idoffs[10];//Actor Skeletons
-    //last bytes left over may just be garbage
-}[[name(segmentname)]];
-leveldescriptorinfo LevelDescriptorSegment @0x00;
+
+struct leveldescriptorInfo{
+    char segmentName[256];
+    float moveX,moveY,moveZ;//X+ -> right, Y+ -> down, Z+ -> forward
+    float moveX2,moveY2,moveZ2;//Unsure, same as previous?
+    float shadingTemp;// -1 for coolest, 1 for warmest
+    float shadingWeight;//-1 for heaviest shading, 1 for fullbright
+    float unknownFloat1; //Couldn't find any changes when tampered with
+    float unknownFloat2; //Couldn't find any changes when tampered with
+    u32 segmentTypeCount[11];//is always only 11 segment types
+    u32 segmentTypeOffset[11];
+    //Each segment is represented by their ID and listed by type here
+    //Not every segment type is listed here, we are missing JOINTLIST, ACTORANIM, etc
+    u32 PROPNODE1     [segmentTypeCount[0]]  @ segmentTypeOffset[0]; //May have unknown ids
+    u32 PROPNODE2     [segmentTypeCount[1]]  @ segmentTypeOffset[1]; //Identical to PROPNODE1 (???)
+    u32 LIGHT         [segmentTypeCount[2]]  @ segmentTypeOffset[2]; //Should only be in maps
+    u32 TYPE4         [segmentTypeCount[3]]  @ segmentTypeOffset[3]; //Not encountered yet (?)
+    u32 ANIMPROPNODE  [segmentTypeCount[4]]  @ segmentTypeOffset[4]; //Non-skeletal animations
+    u32 TEXTURE       [segmentTypeCount[5]]  @ segmentTypeOffset[5]; //
+    u32 MATERIAL      [segmentTypeCount[6]]  @ segmentTypeOffset[6]; //
+    u32 MESH          [segmentTypeCount[7]]  @ segmentTypeOffset[7]; //May have unknown ids
+    u32 TYPE9         [segmentTypeCount[8]]  @ segmentTypeOffset[8]; //Not encountered yet, possibly MESHES2 (?)
+    u32 SKIN          [segmentTypeCount[9]]  @ segmentTypeOffset[9]; //Should just be one per-actor (?)
+    u32 ACTORNODE     [segmentTypeCount[10]] @ segmentTypeOffset[10];//Should just be one per-actor (?)
+    //remaining bytes are garbage (?)
+}[[name(segmentName)]];
+
+leveldescriptorInfo LevelDescriptorSegment @0x00;
+//Segment ID is always 2186838753
+/* TODO: 
+*   Investigate differences in PROPNODE1 and PROPNODE2, i think it could be some limit of how many IDs can be listed
+    per-type?
+
+*   Investigate unknown IDs, they may have a relation to separate animation files
+
+*   Investigate unknownFloat1 & unknownFloat2
+*/

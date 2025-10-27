@@ -1,4 +1,6 @@
-#WIP Nicalis 3D importer
+# WIP Nicalis 3D Importer
+# As of writing this, latest Noesis build uses Python 3.2.1
+# https://www.python.org/downloads/release/python-321/
 
 from inc_noesis import *
 noesis.logPopup()
@@ -11,7 +13,7 @@ def registerNoesisTypes():
   handle = noesis.register("Nicalis 3D Data",".n3dhdr")
   noesis.setHandlerTypeCheck(handle, n3dCheckType)
   noesis.setHandlerLoadModel(handle, n3dLoadModel)
-  # noesis.addOption(handle, "option name", "option description", noesisflags (Do Later)
+  # noesis.addOption(handle, "option name", "option description", noesisflags TODO
   return 1
 
 def n3dCheckType(data):
@@ -20,14 +22,14 @@ def n3dCheckType(data):
     return 0
   return 1
 
-def uInitString(bitstream,bufferSize): #Moves data pointer and returns string
+def uInitString(bitstream,bufferSize): # Moves data pointer and returns string
   readString = bitstream.readString()
   stringLength = (len(readString))
   if (stringLength):
     bitstream.seek(bufferSize - stringLength -1, 1)
     return readString
   
-def fetchSegmentsOfType(n3dSegmentDict,TYPE):#create smaller dict of desired type
+def fetchSegmentsOfType(n3dSegmentDict,TYPE):# Create smaller dict of desired type
   requestedSegments = {}
   for id in n3dSegmentDict:
     for k,v in n3dSegmentDict[id].items():
@@ -36,15 +38,15 @@ def fetchSegmentsOfType(n3dSegmentDict,TYPE):#create smaller dict of desired typ
   return requestedSegments  
 
 def getLevelDescriptor(n3dSegment,bs):
-  for segmentID in n3dSegment: #Assign type to descriptor
-    if segmentID == '2186838753': #This ID is consistent
+  for segmentID in n3dSegment: # Assign type to descriptor
+    if segmentID == '2186838753': # This ID is consistent
       n3dSegment['2186838753']['type'] = 'LEVELDESC'
       print("Found level-descriptor, assigning segment types...")
       break
 
   bs.seek(n3dSegment['2186838753']['offset']+256)
   move_x1,move_y1,move_z1,move_x2,move_y2,move_z2,shadingtemp,shadingweight,_,_, = [bs.readFloat() for _ in range(10)]
-  #Second entry in segmentTypes may just be extra space for propnodes (???)
+  # Second entry in segmentTypes may just be extra space for propnodes (???)
   segmentTypes = ['PROPNODE','PROPNODE','LIGHT','TYPE4','ANIMPROPNODE','TEXTURE','MATERIAL','MESH','TYPE9','SKIN','ACTORNODE']
   for i in range (11):
     bitstreamoffset = 4*i
@@ -110,11 +112,11 @@ def listN3DSegments(bs,bs2,origin):
 
 def getPropNode(bs,propNodeSegments,requestedID):
   PropNodeID = ''
-  for id in propNodeSegments.keys(): # fetch corresponding node
+  for id in propNodeSegments.keys(): # Fetch corresponding node
     bs.seek (propNodeSegments[id]['offset']+364)
-    propCount,propOffset = bs.readUInt(),bs.readUInt()#normally there is never more than one prop referenced in a propnode
+    propCount,propOffset = bs.readUInt(),bs.readUInt()# Normally there is never more than one prop referenced in a propnode
     if propCount > 1:
-      noesis.logOutput("!!! !!! !!! Prop Node Count higher than 1, investigate")
+      print("Prop Node Count higher than 1, investigate")
     bs.seek (propNodeSegments[id]['offset']+propOffset)
     targetID = bs.readUInt()
     if str(requestedID) == str(targetID):
@@ -127,18 +129,18 @@ def getPropNode(bs,propNodeSegments,requestedID):
   transformMatrix = NoeMat44.fromBytes(bs.readBytes(0x40)).toMat43() # Transforms Mesh
   rapi.rpgSetTransform(transformMatrix)
 
-def getMaterial(bs,materialID,materialSegments,textureSegments,texList,matList):
-  #material
-  for k in materialSegments.keys():
+def getMaterial(bs,bs5,materialID,materialSegments,textureSegments,texList,matList):
+  # Material
+  for _ in materialSegments.keys():
     bs.seek (materialSegments[str(materialID)]['offset'])
     materialName = uInitString(bs,256)
     textureID,_,_,_ = [bs.readUInt() for _ in range(4)]
-    _,_,_,_,_,_,_,_,_,_,_ = [bs.readFloat() for _ in range(11)]
-    materialBlendMode = bs.readUInt()
-    rapi.rpgSetMaterial(materialName)# if materials share a name they are merged
-  #texture
+    _,_,_,_,_,_,_,_,_,_,_ = [bs.readFloat() for _ in range(11)]# Unknown, possibly material sliders?
+    alpha,cullBackFaces,solid,unIgnoreZ,alphaTest,additive,subtractive,unknownFlag = [bs.readBits(1) for _ in range(8)]
+    rapi.rpgSetMaterial(materialName) # If materials share a name they are merged
+  # Assign texture to material
   if textureID != 0:
-    for k in textureSegments.keys():
+    for _ in textureSegments.keys():
       bs.seek (textureSegments[str(textureID)]['offset'])
       textureName = uInitString(bs,36)
       texWidth,texHeight,texFormat,_,texBufferOffs = [bs.readUInt() for _ in range(5)]
@@ -149,16 +151,32 @@ def getMaterial(bs,materialID,materialSegments,textureSegments,texList,matList):
       format = noesis.NOESISTEX_RGBA32
     
     texture = NoeTexture(str(textureName), texWidth, texHeight, textureData, format)
-    texture.flags = noesis.NTEXFLAG_FILTER_NEAREST #Sets texture flag to nearest, put this somewhere else later
+    texture.flags = noesis.NTEXFLAG_FILTER_NEAREST # TODO: Figure if there's a texture filter flag
     texList.append(texture)
     material = NoeMaterial(str(materialName),str(textureName))
   else:
     material = NoeMaterial(str(materialName),None)
-    noesis.logOutput("Material '"+str(materialName)+"' has no texture\n")
-  if materialBlendMode == 43: #Additive Blend Mode
-    material.setBlendMode("GL_ONE","GL_ONE")
-  elif materialBlendMode == 11: #Alpha Blend Mode, luminance too high?
-    material.setBlendMode("GL_SRC_ALPHA","GL_ONE")
+    print("Material '"+str(materialName)+"' has no texture\n")
+  # Material flags
+  if cullBackFaces == 0:
+    material.flags = noesis.NMATFLAG_TWOSIDED
+  if alphaTest == 1: # Unused?
+    noesis.doException("unimplemented material flag")
+  if unIgnoreZ == 0: # Unused?
+    noesis.doException("unimplemented material flag")
+  if unknownFlag == 1:
+    noesis.doException("unimplemented material flag")
+  if alpha == 1 and solid == 0:
+    if additive == 1:
+      material.setBlendMode("GL_ONE","GL_ONE")
+    elif subtractive == 1: # Unused?
+      material.setBlendMode("GL_ONE","GL_ZERO")
+    elif texFormat == 2:
+      material.setBlendMode("GL_SRC_ALPHA","GL_ONE_MINUS_SRC_ALPHA") # TODO Almost there...
+  # Material animations
+  if hasattr(bs5,"data"): # Check if material animation file is present
+    getMaterialAnimation(bs5,material)
+  # Append material to matlist
   matList.append(material)
   return 
     
@@ -168,28 +186,28 @@ def getSkeleton(bs,actorNodeSegments,skinSegments,jointListSegments,jointList):
   jointMatrices = []
   for k in jointListSegments.keys():
     if jointListSegments[str(k)]['origin'] == 'INTERNAL':
-      bs.seek(jointListSegments[str(k)]['offset']) #no name string here, if only the other segments were as nice...
+      bs.seek(jointListSegments[str(k)]['offset']) # No name string here, if only the other segments were as nice...
       jointCount,jointOffset = [bs.readUInt() for _ in range(2)]
       bs.seek(jointListSegments[str(k)]['offset']+jointOffset)
       for joint in range (jointCount):
         jointNames.append(uInitString(bs,40))
         jointMagic,_,_,_,_,_ = [bs.readUInt() for _ in range(6)]
-        jointMatrix = (NoeMat44.fromBytes(bs.readBytes(0x40)).toMat43().inverse()) #unsure what to do with this when skin matrix works fine
+        jointMatrix = (NoeMat44.fromBytes(bs.readBytes(0x40)).toMat43().inverse()) # Unsure what to do with this when skin matrix works fine
         jointParents.append(bs.readUInt())
         
   for k in skinSegments.keys():
     if skinSegments[str(k)]['type'] == 'SKIN':
       bs.seek(skinSegments[str(k)]['offset'])
       skinSegmentName = uInitString(bs,(256*3))
-      skinSegmentMatrix = NoeMat44.fromBytes(bs.readBytes(0x40)).toMat43() #transforms mesh before applying skel
+      skinSegmentMatrix = NoeMat44.fromBytes(bs.readBytes(0x40)).toMat43() # Transforms mesh before applying skel
       rapi.rpgSetTransform(skinSegmentMatrix)
 
-      matrixCount,matrixOffset,unk1,unk2 = [bs.readUInt() for _ in range(4)]#unk1 & unk2 may be some range (min/max) or IDs
+      matrixCount,matrixOffset,unk1,unk2 = [bs.readUInt() for _ in range(4)]# nk1 & unk2 may be some range (min/max) or IDs
       bs.seek(skinSegments[str(k)]['offset']+matrixOffset)
       for _ in range(matrixCount):
         jointMatrices.append(NoeMat44.fromBytes(bs.readBytes(0x40)).toMat43().inverse())
         
-  for i, (parent,name,mat) in enumerate(zip(jointParents,jointNames,jointMatrices)): #construct skeleton
+  for i, (parent,name,mat) in enumerate(zip(jointParents,jointNames,jointMatrices)): # Construct skeleton
     joint = NoeBone(i,name,mat,None,parent)
     jointList.append(joint)
   
@@ -208,9 +226,9 @@ def getSkeletonAnimation(bitstream,jointList,actorAnimSegments,animList,origin):
       animLengthMin,animLengthMax = [bitstream.readFloat() for _ in range(2)] #TODO, investigate on balrog_teleport
       animMatrix = NoeMat44.fromBytes(bitstream.readBytes(0x40)).toMat43()
       animID,animTransCount,animBoneCount,offset2AnimTransOffset = [bitstream.readUInt() for _ in range(4)]
-      print("Animation: ",animationName,"Start:",animLengthMin,"End:",animLengthMax)
+      #print("Animation: ",animationName,"Start:",animLengthMin,"End:",animLengthMax)
       
-      for k in range (animTransCount):#all transforms, not all bones come with all 3
+      for k in range (animTransCount):# All transforms, not all bones come with all 3
         currentTransform = 1 # 1:Move, 2:Rotate, 3:Scale
         currentBoneIndex = 0
         posKF = []
@@ -225,12 +243,12 @@ def getSkeletonAnimation(bitstream,jointList,actorAnimSegments,animList,origin):
         transformValue,animTransformMagic,vec3Offset = [bitstream.readUInt() for _ in range(3)]
         animTransformSize = animTransformMagic - 18087936
         
-        #Find out which transform by using transformValue
+        # Find out which transform by using transformValue
         while transformValue != 12:
-          currentTransform += 1 #Rotation transform
+          currentTransform += 1 # Rotation transform
           transformValue -= 768 
           if transformValue == 12: break
-          currentTransform += 1 #Scale transform
+          currentTransform += 1 # Scale transform
           transformValue -= 768 
           if transformValue == 12: break
           currentTransform -= 2
@@ -239,7 +257,7 @@ def getSkeletonAnimation(bitstream,jointList,actorAnimSegments,animList,origin):
           if transformValue == 12: break
           if transformValue <= 0: noesis.doException("Corrupt or bad keyframe track!")
 
-        print("Keyframed Bone:",currentBoneName,"Start:",transformLengthMin,"End:",transformLengthMax)
+        #print("Keyframed Bone:",currentBoneName,"Start:",transformLengthMin,"End:",transformLengthMax)
 
         animBone = NoeKeyFramedBone(currentBoneIndex)
         animBone.flags = noesis.NOEKF_INTERPOLATE_LINEAR
@@ -252,13 +270,13 @@ def getSkeletonAnimation(bitstream,jointList,actorAnimSegments,animList,origin):
               
           if currentTransform == 1:
             posKF.append(NoeKeyFramedValue(animTimeStamp, NoeVec3([x,y,z])))
-            print("Move @",animTimeStamp,x,y,z)  
+            #print("Move @",animTimeStamp,x,y,z)  
           elif currentTransform == 2:
             rotKF.append(NoeKeyFramedValue(animTimeStamp, NoeAngles([x,y,z]).toDegrees()))
-            print("Rotate @",animTimeStamp,x,y,z)
+            #print("Rotate @",animTimeStamp,x,y,z)
           elif currentTransform == 3:
             sclKF.append(NoeKeyFramedValue(animTimeStamp, NoeVec3([x,y,z])))
-            print("Scale @",animTimeStamp,x,y,z)
+            #print("Scale @",animTimeStamp,x,y,z)
             
         print(currentBoneName,"index",currentBoneIndex)
         if posKF != []:
@@ -272,9 +290,60 @@ def getSkeletonAnimation(bitstream,jointList,actorAnimSegments,animList,origin):
           print("Scale keyframes:",sclKF)
         keyframedBoneList.append(animBone)
       anim = NoeKeyFramedAnim(animationName, jointList, keyframedBoneList, framerate)
-      animList.append(anim)# only repeat when anim is done
-  
-def getMesh(bs,bs3,n3dSegmentDict,mdlList):
+      animList.append(anim)# Only repeat when anim is done
+
+def getMaterialAnimation(bs5,material): #TODO Cleanup, figure how to implement the per-frame delay on UV Snap into expression
+  bs5.seek(0)
+  materialAnimationFound = 0
+  if material.name in bs5.readString():
+    matAnimFlags = ["frame_w","frame_h","frame_show","frame_time","speed_u","speed_v","material","name"]
+    snapMatAnimExprU = "abs(floor(mod(time*0.1*y,x)))/x"
+    snapMatAnimExprV = "abs(floor(mod(time*0.1*y,x)))/x"
+    scrollMatAnimExpr = "abs(time*0.001)*(x)"
+    bs5.seek(0)
+    matAnimationList = bs5.readString().splitlines() # Turn file into list
+    for idx, k in enumerate(matAnimationList): # Remove tabs from strings
+      nk = k.replace('\t', '')
+      matAnimationList[idx] = nk
+      if nk == material.name:
+        materialAnimationFound = 1
+      elif nk == "n3d_anim": # Used for animating materials to gameplay
+        print("Unimplemented matanim.")
+        break
+      if materialAnimationFound == 1:
+        if nk == "{":
+          materialAnimationFound = 2
+          continue
+      if materialAnimationFound == 2:
+        if nk == "}":
+          break
+        for f in matAnimFlags: # If noesis ever gets updated to python 3.10, please re-write this to use match...
+          if f in nk:
+            v = nk.replace(f + " = ", '') # Value
+            # Mat UV Slide
+            if f in matAnimFlags[4]: # U axis
+              material.setExpr_uvtrans_x(scrollMatAnimExpr.replace("x", v))
+            if f in matAnimFlags[5]: # V axis
+              material.setExpr_uvtrans_y(scrollMatAnimExpr.replace("x", v))
+            # Mat UV Snap
+            if f in matAnimFlags[0]: # Amount of frames on U
+              snapMatAnimExprU = snapMatAnimExprU.replace("x",v)
+            if f in matAnimFlags[1]: # Amount of frames on V
+              snapMatAnimExprV = snapMatAnimExprV.replace("x",v)
+            #if f in matAnimFlags[2]:
+            #  print("Selected frame: ",v)
+            if f in matAnimFlags[3]:
+              snapMatAnimExprU = snapMatAnimExprU.replace("y",v)
+              snapMatAnimExprV = snapMatAnimExprV.replace("y",v)
+            # Mat UV Event
+            if f in matAnimFlags[6:7]:
+              print("Unimplemented matanim flag")
+            material.setExpr_uvtrans_x(snapMatAnimExprU)
+            material.setExpr_uvtrans_y(snapMatAnimExprV)
+            
+                
+
+def getMesh(bs,bs3,bs5,n3dSegmentDict,mdlList):
   texList = []
   matList = []
   jointList = []
@@ -307,7 +376,7 @@ def getMesh(bs,bs3,n3dSegmentDict,mdlList):
     else:
       noesis.doException("Unknown mesh type!")
     
-    #vertices
+    # Vertices
     bs.seek(meshSegments[meshID]['offset']+vertexOffset)
     vertexBuffer = bs.readBytes(vertexCount * dataStride)
     rapi.rpgClearBufferBinds()
@@ -334,10 +403,10 @@ def getMesh(bs,bs3,n3dSegmentDict,mdlList):
       
       materialSegments = fetchSegmentsOfType(n3dSegmentDict,'MATERIAL')
       textureSegments = fetchSegmentsOfType(n3dSegmentDict,'TEXTURE')
-      if materialSegments != {}: #check if there are materials
-        getMaterial(bs,materialID,materialSegments,textureSegments,texList,matList)
+      if materialSegments != {}: # Check if there are materials
+        getMaterial(bs,bs5,materialID,materialSegments,textureSegments,texList,matList)
       
-      #indices
+      # Indices
       bs.seek (meshSegments[meshID]['offset']+ indexOffset+submeshFaceOffset*2)
       indexBuffer = bs.readBytes(submeshFaceCount*2)
       rapi.rpgCommitTriangles(indexBuffer,noesis.RPGEODATA_USHORT, submeshFaceCount,noesis.RPGEO_TRIANGLE)
@@ -355,7 +424,7 @@ def getMesh(bs,bs3,n3dSegmentDict,mdlList):
 def n3dLoadModel(data, mdlList):
   ctx = rapi.rpgCreateContext()
   bs3,bs4,bs5,bs6 = None,None,None,None
-  #Load model regardless of paired file selected
+  # Load model regardless of paired file selected
   print("Found selected file "+ rapi.getInputName())
   if rapi.checkFileExt(rapi.getInputName(),".n3ddta") == 1:
     bs = NoeBitStream(data)
@@ -375,9 +444,9 @@ def n3dLoadModel(data, mdlList):
     else:noesis.Noesis_DoException("Missing .n3ddta file!")
   modelName = bs2.readString()
   print("Loading model: " + modelName)
-  n3dSegmentDict = listN3DSegments(bs,bs2,'INTERNAL')#Fetch segment info and return a dict
+  n3dSegmentDict = listN3DSegments(bs,bs2,'INTERNAL')# Fetch segment info and return a dict
 
-  #Load External Animations
+  # Load External Animations
   animDataFileName = rapi.getDirForFilePath(rapi.getInputName()) + "anim\\anim" + modelName[3:] + ".n3ddta"
   animHeaderFileName = rapi.getDirForFilePath(rapi.getInputName()) + "anim\\anim" + modelName[3:] + ".n3dhdr"
   if rapi.checkFileExists(animDataFileName) !=0 and rapi.checkFileExists(animHeaderFileName) !=0:
@@ -390,21 +459,21 @@ def n3dLoadModel(data, mdlList):
     animN3DSegmentDict = listN3DSegments(bs3,bs4,'EXTERNAL')
     n3dSegmentDict.update(animN3DSegmentDict)
 
-  #Load External Material Animation 
+  # Load External Material Animation 
   matAnimFileName = rapi.getExtensionlessName(rapi.getInputName()) + ".mat" 
   if rapi.checkFileExists(matAnimFileName) !=0:
     data5 = rapi.loadIntoByteArray(matAnimFileName)
     bs5 = NoeBitStream(data5)
     print("Found material animation file: "+ matAnimFileName)
 
-  #Load External Camera Info (???)
+  # Load External Camera Info (???)
   camFileName = rapi.getExtensionlessName(rapi.getInputName()) + ".cam" 
   if rapi.checkFileExists(camFileName) !=0:
     data6 = rapi.loadIntoByteArray(camFileName)
     bs6 = NoeBitStream(data6)
     print("Found camera file: "+ camFileName)
   
-  getMesh(bs,bs3,n3dSegmentDict,mdlList)
-  noesis.logOutput("Model file: '"+str(modelName) +"' Loaded. "+"\n")
+  getMesh(bs,bs3,bs5,n3dSegmentDict,mdlList)
+  print("Model file: '"+str(modelName) +"' Loaded. "+"\n")
   
   return 1
