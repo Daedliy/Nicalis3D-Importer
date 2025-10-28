@@ -320,26 +320,27 @@ def getMaterialAnimation(bs5,material): #TODO Cleanup, figure how to implement t
         for f in matAnimFlags: # If noesis ever gets updated to python 3.10, please re-write this to use match...
           if f in nk:
             v = nk.replace(f + " = ", '') # Value
-            # Mat UV Slide
-            if f in matAnimFlags[4]: # U axis
-              material.setExpr_uvtrans_x(scrollMatAnimExpr.replace("x", v))
-            if f in matAnimFlags[5]: # V axis
-              material.setExpr_uvtrans_y(scrollMatAnimExpr.replace("x", v))
-            # Mat UV Snap
-            if f in matAnimFlags[0]: # Amount of frames on U
-              snapMatAnimExprU = snapMatAnimExprU.replace("x",v)
-            if f in matAnimFlags[1]: # Amount of frames on V
-              snapMatAnimExprV = snapMatAnimExprV.replace("x",v)
-            #if f in matAnimFlags[2]:
-            #  print("Selected frame: ",v)
-            if f in matAnimFlags[3]:
-              snapMatAnimExprU = snapMatAnimExprU.replace("y",v)
-              snapMatAnimExprV = snapMatAnimExprV.replace("y",v)
-            # Mat UV Event
-            if f in matAnimFlags[6:7]:
-              print("Unimplemented matanim flag")
-            material.setExpr_uvtrans_x(snapMatAnimExprU)
-            material.setExpr_uvtrans_y(snapMatAnimExprV)
+            if f in matAnimFlags[4:6]: # Mat UV Slide
+              if f in matAnimFlags[4]: # U axis
+                material.setExpr_uvtrans_x(scrollMatAnimExpr.replace("x", v))
+              if f in matAnimFlags[5]: # V axis
+                material.setExpr_uvtrans_y(scrollMatAnimExpr.replace("x", v))
+              break
+            else: # Mat UV Snap
+              if f in matAnimFlags[0]: # Amount of frames on U
+                snapMatAnimExprU = snapMatAnimExprU.replace("x",v)
+              if f in matAnimFlags[1]: # Amount of frames on V
+                snapMatAnimExprV = snapMatAnimExprV.replace("x",v)
+              #if f in matAnimFlags[2]:
+              #  print("Selected frame: ",v)
+              if f in matAnimFlags[3]:
+                snapMatAnimExprU = snapMatAnimExprU.replace("y",v)
+                snapMatAnimExprV = snapMatAnimExprV.replace("y",v)
+              # Mat UV Event
+              if f in matAnimFlags[6:7]:
+                print("Unimplemented matanim flag")
+              material.setExpr_uvtrans_x(snapMatAnimExprU)
+              material.setExpr_uvtrans_y(snapMatAnimExprV)
             
                 
 

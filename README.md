@@ -21,12 +21,12 @@ ImHex patterns for segments of the file spec and notes [can be found here](https
 
 ### Roadmap
 - [x] Rewrite script to load all segments by ID
-- [ ] Implement material & texture flags
+- [x] Implement material & texture flags
 - [ ] Implement bounding boxes
 - [ ] Implement animations
   - [x] Actor Animations `\anim\_.n3d__`
   - [ ] Prop Animations `prop animation segment`
-  - [ ] Animated Textures `.mat`
+  - [x] Animated Textures `.mat`
 - [ ] Implement scene objects
 
 ### Tools used
